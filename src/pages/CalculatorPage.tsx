@@ -8,6 +8,7 @@ import Modal from '../components/ui/Modal';
 import CostChart from '../components/charts/CostChart';
 import MaterialBarChart from '../components/charts/MaterialBarChart';
 import SketchScannerModal from '../components/scanner/SketchScannerModal';
+import ShareProjectModal from '../components/projects/ShareProjectModal';
 import type { WallMeasurement, CeilingMeasurement, Opening, ConstructionType } from '../types';
 import { CONSTRUCTION_TYPES } from '../utils/constants';
 import jsPDF from 'jspdf';
@@ -35,6 +36,7 @@ export default function CalculatorPage() {
   const [showAddWall, setShowAddWall] = useState(false);
   const [showAddCeiling, setShowAddCeiling] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
 
   // New project form
   const [projectName, setProjectName] = useState('');
@@ -376,6 +378,13 @@ export default function CalculatorPage() {
         </div>
 
         <div className="flex gap-1.5">
+          <button
+            onClick={() => setShowShareModal(true)}
+            title="Pasar este proyecto al celular"
+            className="p-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl border border-blue-200 text-xs font-bold flex items-center gap-1 active:scale-95 transition-transform cursor-pointer"
+          >
+            <span>📲</span> Pasar a Celular
+          </button>
           <button
             onClick={() => navigate('/viewer3d')}
             className="p-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl shadow-sm text-xs font-bold flex items-center gap-1 active:scale-95 transition-transform cursor-pointer"
@@ -876,6 +885,13 @@ export default function CalculatorPage() {
       <SketchScannerModal
         isOpen={showScanner}
         onClose={() => setShowScanner(false)}
+      />
+
+      {/* Share to Phone Modal */}
+      <ShareProjectModal
+        project={currentProject}
+        isOpen={showShareModal}
+        onClose={() => setShowShareModal(false)}
       />
     </div>
   );
