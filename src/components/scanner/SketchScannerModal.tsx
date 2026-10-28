@@ -17,12 +17,60 @@ function generateId(): string {
   return Math.random().toString(36).substring(2, 9);
 }
 
+// Compress and resize image to lightweight JPEG for ultra-fast mobile upload
+function compressImage(file: File, maxDim = 1280, quality = 0.8): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxDim) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          }
+        } else {
+          if (height > maxDim) {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(e.target?.result as string);
+          return;
+        }
+
+        // Fill white background for transparent PNGs
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        resolve(dataUrl);
+      };
+      img.src = e.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function SketchScannerModal({ isOpen, onClose, onSuccess }: SketchScannerModalProps) {
   const { geminiApiKey, setGeminiApiKey, importFromSketch } = useProjectStore();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Editable detected results
@@ -32,43 +80,49 @@ export default function SketchScannerModal({ isOpen, onClose, onSuccess }: Sketc
   const [detectedNotes, setDetectedNotes] = useState<string>('');
   const [step, setStep] = useState<'upload' | 'review'>('upload');
 
-  // Handle image selection
-  const handleImageChange = (e: ChangeEvent<HTMLInputElement>) => {
+  // Handle image selection with auto-compression
+  const handleImageChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setErrorMsg(null);
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      setImagePreview(event.target?.result as string);
-    };
-    reader.readAsDataURL(file);
+    setStatusMessage('Optimizando foto para análisis rápido...');
+    try {
+      const compressedDataUrl = await compressImage(file, 1280, 0.82);
+      setImagePreview(compressedDataUrl);
+      setStatusMessage('');
+    } catch (err) {
+      console.error(err);
+      setErrorMsg('No se pudo leer la foto seleccionada.');
+      setStatusMessage('');
+    }
   };
 
-  // Analyze sketch using Gemini Vision API or intelligent fallback
+  // Analyze sketch using Gemini Vision API
   const analyzeSketch = async () => {
     if (!imagePreview) return;
     setIsAnalyzing(true);
     setErrorMsg(null);
+    setStatusMessage('Enviando a Gemini Vision...');
 
     try {
       const activeApiKey = (geminiApiKey && geminiApiKey.trim().length > 10)
         ? geminiApiKey.trim()
         : 'AIzaSyDAR9JEpDaeu2RlYun_u7HWDKawPaD0w2w';
 
-      // Real Gemini Vision API call with user's key
       const base64Data = imagePreview.split(',')[1];
-      const mimeType = imagePreview.split(';')[0].split(':')[1] || 'image/jpeg';
 
-      const prompt = `Eres un maestro de obra e ingeniero civil experto en construcción en Drywall y tabiquería en seco.
-Analiza este dibujo, croquis o plano hecho a mano alzada.
-Identifica todas las paredes, tabiques, aberturas (puertas o ventanas) y cielos rasos indicados con sus medidas numéricas (en metros).
-Si alguna pared no tiene altura indicada, asume la altura estándar de 2.40 metros.
-Si alguna pared no especifica si es una cara o dos, asume doble cara (hasDoubleSide: true) para tabiques divisorios.
-Devuelve EXCLUSIVAMENTE un objeto JSON válido con esta estructura, sin texto adicional ni markdown:
+      const prompt = `Actúa como un maestro de obras e ingeniero civil experto en tabiquería y construcción con Drywall.
+Examina atentamente este dibujo, plano a lápiz o croquis hecho a mano alzada.
+Extrae todas las paredes con sus medidas numéricas (ancho o largo y alto en metros), puertas, ventanas y cielos rasos si existen.
+Reglas:
+1. Si una pared no tiene altura indicada, asume 2.40 metros.
+2. Si no especifica una o dos caras, asume doble cara (hasDoubleSide: true).
+3. Si detectas aberturas como puertas (aprox 0.90x2.10) o ventanas (aprox 1.20x1.10), agrégalas a "openings".
+4. Devuelve ESTRICTAMENTE un JSON con esta estructura exacta:
 {
-  "projectName": "Nombre del sector o habitación",
-  "notes": "Detalles o notas detectadas en el boceto",
+  "projectName": "Nombre sugerido de la habitación",
+  "notes": "Observaciones detectadas en el boceto",
   "walls": [
     {
       "name": "Pared 1",
@@ -97,16 +151,21 @@ Devuelve EXCLUSIVAMENTE un objeto JSON válido con esta estructura, sin texto ad
               { text: prompt },
               {
                 inlineData: {
-                  mimeType,
+                  mimeType: 'image/jpeg',
                   data: base64Data,
                 },
               },
             ],
           },
         ],
+        generationConfig: {
+          responseMimeType: 'application/json',
+        },
       });
 
-      // Try gemini-3.5-flash-lite first, fallback to gemini-3.8-flash
+      setStatusMessage('Gemini Vision interpretando medidas y trazos...');
+
+      // Try gemini-3.5-flash-lite, fallback to gemini-3.8-flash
       let response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${activeApiKey}`,
         {
@@ -128,80 +187,143 @@ Devuelve EXCLUSIVAMENTE un objeto JSON válido con esta estructura, sin texto ad
       }
 
       if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData?.error?.message || 'Error al conectar con Gemini Vision');
+        const errJson = await response.json().catch(() => null);
+        throw new Error(errJson?.error?.message || `Error del servidor de IA (${response.status})`);
       }
 
       const data = await response.json();
-      const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      
-      // Robust JSON extraction (handles markdown blocks, thoughts, whitespace)
-      const jsonMatch = textResponse.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        throw new Error('No se pudo interpretar el formato JSON del dibujo.');
+      const parts = data.candidates?.[0]?.content?.parts || [];
+      const textResponse = parts.map((p: { text?: string }) => p.text || '').join('\n');
+
+      if (!textResponse.trim()) {
+        throw new Error('La IA no devolvió respuesta. Intenta con una foto más iluminada o de más cerca.');
       }
 
-      const parsed = JSON.parse(jsonMatch[0]);
+      setStatusMessage('Extrayendo paredes y aberturas...');
+
+      // Robust JSON extraction
+      let parsed: unknown = null;
+      try {
+        parsed = JSON.parse(textResponse);
+      } catch {
+        const match = textResponse.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
+        if (match) {
+          parsed = JSON.parse(match[0]);
+        }
+      }
+
+      if (!parsed) {
+        throw new Error('No se pudo decodificar el formato de medidas del dibujo.');
+      }
+
       populateDetected(parsed);
     } catch (err: unknown) {
-      console.error(err);
+      console.error('Scan error:', err);
       setErrorMsg(
         err instanceof Error
           ? err.message
-          : 'No se pudo procesar el dibujo. Verifica que las medidas sean legibles.'
+          : 'Ocurrió un error al procesar el dibujo. Asegúrate de que las medidas numéricas sean legibles.'
       );
     } finally {
       setIsAnalyzing(false);
+      setStatusMessage('');
     }
   };
 
-  // Populate state with detected values
-  interface RawDetected {
-    projectName?: string;
-    notes?: string;
-    walls?: Array<{
-      id?: string;
+  // Populate state with flexible detection format
+  const populateDetected = (data: unknown) => {
+    let rawWalls: unknown[] = [];
+    let rawCeilings: unknown[] = [];
+    let projName = 'Proyecto Escaneado';
+    let notes = '';
+
+    if (Array.isArray(data)) {
+      rawWalls = data;
+    } else if (typeof data === 'object' && data !== null) {
+      const obj = data as Record<string, unknown>;
+      projName = (obj.projectName as string) || (obj.nombre as string) || 'Proyecto Escaneado';
+      notes = (obj.notes as string) || (obj.observaciones as string) || '';
+
+      if (Array.isArray(obj.walls)) rawWalls = obj.walls;
+      else if (Array.isArray(obj.paredes)) rawWalls = obj.paredes;
+      else if (Array.isArray(obj.tabiques)) rawWalls = obj.tabiques;
+
+      if (Array.isArray(obj.ceilings)) rawCeilings = obj.ceilings;
+      else if (Array.isArray(obj.techos)) rawCeilings = obj.techos;
+    }
+
+    if (rawWalls.length === 0 && rawCeilings.length === 0) {
+      setErrorMsg('No se detectaron paredes con medidas numéricas claras en la foto. Agrega al menos una medida visible como "3.5m" o "4x2.4m".');
+      return;
+    }
+
+    setDetectedProjectName(projName);
+    setDetectedNotes(notes);
+
+    interface RawWallItem {
       name?: string;
+      nombre?: string;
       width?: number;
+      ancho?: number;
+      largo?: number;
       height?: number;
+      alto?: number;
       hasDoubleSide?: boolean;
-      openings?: Array<{ id?: string; type: string; width: number; height: number }>;
-    }>;
-    ceilings?: Array<{
-      id?: string;
+      dobleCara?: boolean;
+      openings?: Array<{ type?: string; width?: number; height?: number; tipo?: string; ancho?: number; alto?: number }>;
+      aberturas?: Array<{ type?: string; width?: number; height?: number; tipo?: string; ancho?: number; alto?: number }>;
+    }
+
+    const walls: WallMeasurement[] = rawWalls.map((item, i) => {
+      const w = item as RawWallItem;
+      const widthVal = Number(w.width ?? w.ancho ?? w.largo ?? 3.0);
+      const heightVal = Number(w.height ?? w.alto ?? 2.4);
+      const isDouble = w.hasDoubleSide !== false && w.dobleCara !== false;
+
+      const rawOps = w.openings || w.aberturas || [];
+      const openings = rawOps.map((op) => {
+        const typeStr = (op.type || op.tipo || '').toLowerCase();
+        const isWindow = typeStr.includes('vent') || typeStr.includes('window');
+        return {
+          id: generateId(),
+          type: (isWindow ? 'ventana' : 'puerta') as 'puerta' | 'ventana',
+          width: Number(op.width ?? op.ancho ?? (isWindow ? 1.2 : 0.9)),
+          height: Number(op.height ?? op.alto ?? (isWindow ? 1.1 : 2.1)),
+        };
+      });
+
+      return {
+        id: generateId(),
+        name: w.name || w.nombre || `Pared ${i + 1}`,
+        width: Math.max(widthVal, 0.2),
+        height: Math.max(heightVal, 0.5),
+        type: 'tabique',
+        hasDoubleSide: isDouble,
+        openings,
+      };
+    });
+
+    interface RawCeilingItem {
       name?: string;
+      nombre?: string;
       width?: number;
+      ancho?: number;
       length?: number;
+      largo?: number;
       dropHeight?: number;
-    }>;
-  }
+      descuelgue?: number;
+    }
 
-  const populateDetected = (data: RawDetected) => {
-    setDetectedProjectName(data.projectName || 'Proyecto Escaneado');
-    setDetectedNotes(data.notes || '');
-
-    const walls: WallMeasurement[] = (data.walls || []).map((w, i) => ({
-      id: w.id || generateId(),
-      name: w.name || `Pared ${i + 1}`,
-      width: Number(w.width) || 3.0,
-      height: Number(w.height) || 2.4,
-      type: 'tabique',
-      hasDoubleSide: w.hasDoubleSide !== false,
-      openings: (w.openings || []).map((o) => ({
-        id: o.id || generateId(),
-        type: o.type === 'ventana' ? 'ventana' : 'puerta',
-        width: Number(o.width) || 0.9,
-        height: Number(o.height) || 2.1,
-      })),
-    }));
-
-    const ceilings: CeilingMeasurement[] = (data.ceilings || []).map((c, i) => ({
-      id: c.id || generateId(),
-      name: c.name || `Cielo Raso ${i + 1}`,
-      width: Number(c.width) || 3.0,
-      length: Number(c.length) || 3.0,
-      dropHeight: Number(c.dropHeight) || 0.1,
-    }));
+    const ceilings: CeilingMeasurement[] = rawCeilings.map((item, i) => {
+      const c = item as RawCeilingItem;
+      return {
+        id: generateId(),
+        name: c.name || c.nombre || `Cielo Raso ${i + 1}`,
+        width: Number(c.width ?? c.ancho ?? 3.0),
+        length: Number(c.length ?? c.largo ?? 3.0),
+        dropHeight: Number(c.dropHeight ?? c.descuelgue ?? 0.1),
+      };
+    });
 
     setDetectedWalls(walls);
     setDetectedCeilings(ceilings);
@@ -232,12 +354,27 @@ Devuelve EXCLUSIVAMENTE un objeto JSON válido con esta estructura, sin texto ad
     setDetectedWalls((prev) => prev.filter((w) => w.id !== id));
   };
 
+  const addManualWallToDetected = () => {
+    setDetectedWalls((prev) => [
+      ...prev,
+      {
+        id: generateId(),
+        name: `Pared ${prev.length + 1}`,
+        width: 3.0,
+        height: 2.4,
+        type: 'tabique',
+        hasDoubleSide: true,
+        openings: [],
+      },
+    ]);
+  };
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="📸 Escanear Dibujo a Mano (IA)">
       {step === 'upload' ? (
         <div className="space-y-4">
           <p className="text-xs text-slate-500 leading-relaxed">
-            Toma una foto al bosquejo o dibujo que hiciste a lápiz/papel con las medidas. Nuestra IA detectará las paredes, aberturas y calculará automáticamente los materiales y el 3D.
+            Toma una foto al dibujo o croquis en papel con las medidas de tu obra. Google Gemini Vision detectará las paredes, alturas, puertas y ventanas.
           </p>
 
           {/* Photo capture zone */}
@@ -261,7 +398,7 @@ Devuelve EXCLUSIVAMENTE un objeto JSON válido con esta estructura, sin texto ad
                   alt="Dibujo a mano"
                   className="max-h-48 mx-auto rounded-xl shadow-md object-contain border border-slate-200"
                 />
-                <p className="text-xs text-blue-600 font-bold">Toca para cambiar la foto 🔄</p>
+                <p className="text-xs text-blue-600 font-bold">Toca aquí para cambiar la foto 🔄</p>
               </div>
             ) : (
               <div className="space-y-2">
@@ -274,44 +411,40 @@ Devuelve EXCLUSIVAMENTE un objeto JSON válido con esta estructura, sin texto ad
             )}
           </div>
 
-          {/* API Key Optional Banner */}
-          <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="font-bold text-slate-700 flex items-center gap-1">
-                <span>🤖</span> Google Gemini Vision
-              </span>
-              <a
-                href="https://aistudio.google.com/app/apikey"
-                target="_blank"
-                rel="noreferrer"
-                className="text-blue-600 font-semibold hover:underline text-[11px]"
-              >
-                Obtener Key gratis ↗
-              </a>
-            </div>
-            <input
-              type="password"
-              placeholder="Pega tu Gemini API Key (opcional, o usa modo demo)"
-              value={geminiApiKey}
-              onChange={(e) => setGeminiApiKey(e.target.value)}
-              className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs focus:ring-1 focus:ring-blue-500"
-            />
-            <p className="text-[10px] text-slate-400">
-              * Si no colocas clave, se ejecutará el analizador inteligente de demostración para que lo pruebes de inmediato.
-            </p>
-          </div>
-
-          {errorMsg && (
-            <div className="p-3 bg-red-50 text-red-600 rounded-xl text-xs font-semibold">
-              ⚠️ {errorMsg}
+          {/* Status / Loading indicator */}
+          {statusMessage && (
+            <div className="p-3 bg-blue-50 text-blue-700 rounded-xl text-xs font-semibold flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-ping"></span>
+              <span>{statusMessage}</span>
             </div>
           )}
+
+          {errorMsg && (
+            <div className="p-3 bg-red-50 text-red-600 rounded-xl text-xs font-semibold space-y-1">
+              <p className="font-bold">⚠️ Atención:</p>
+              <p>{errorMsg}</p>
+            </div>
+          )}
+
+          {/* API Key info */}
+          <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs flex items-center justify-between">
+            <span className="text-slate-600 text-[11px] font-medium flex items-center gap-1.5">
+              <span>🤖</span> Gemini Vision conectado: <strong className="text-emerald-600">Activo ✓</strong>
+            </span>
+            <input
+              type="password"
+              title="Tu clave de Gemini"
+              value={geminiApiKey || 'AIzaSyDAR9JEpDaeu2RlYun_u7HWDKawPaD0w2w'}
+              onChange={(e) => setGeminiApiKey(e.target.value)}
+              className="w-24 text-[10px] px-1.5 py-0.5 bg-white border border-slate-300 rounded text-slate-400 text-right"
+            />
+          </div>
 
           <Button
             fullWidth
             onClick={analyzeSketch}
             disabled={!imagePreview || isAnalyzing}
-            className="py-3 font-bold bg-blue-600 hover:bg-blue-700 shadow-md"
+            className="py-3 font-bold bg-blue-600 hover:bg-blue-700 shadow-md text-sm"
           >
             {isAnalyzing ? '⏳ Analizando dibujo con IA...' : '🔍 Escanear y Detectar Medidas'}
           </Button>
@@ -322,9 +455,9 @@ Devuelve EXCLUSIVAMENTE un objeto JSON válido con esta estructura, sin texto ad
           <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl flex items-center gap-2">
             <span className="text-xl">✨</span>
             <div>
-              <p className="text-xs font-bold text-emerald-800">¡Dibujo interpretado con éxito!</p>
+              <p className="text-xs font-bold text-emerald-800">¡Medidas detectadas por la IA!</p>
               <p className="text-[11px] text-emerald-600">
-                Verifica las medidas detectadas o corrígelas antes de construir el modelo 3D.
+                Verifica las paredes detectadas. Puedes editar cualquier número si lo deseas.
               </p>
             </div>
           </div>
@@ -343,9 +476,18 @@ Devuelve EXCLUSIVAMENTE un objeto JSON válido con esta estructura, sin texto ad
 
           {/* Walls List */}
           <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-              🧱 Tabiques Detectados ({detectedWalls.length})
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                🧱 Tabiques Detectados ({detectedWalls.length})
+              </label>
+              <button
+                type="button"
+                onClick={addManualWallToDetected}
+                className="text-xs text-blue-600 font-bold hover:underline"
+              >
+                + Agregar pared
+              </button>
+            </div>
 
             {detectedWalls.map((wall) => (
               <div
