@@ -61,7 +61,7 @@ export const useProjectStore = create<ProjectState>()(
       currentProject: null,
       prices: DEFAULT_PRICES,
       laborCosts: DEFAULT_LABOR_COSTS,
-      geminiApiKey: '',
+      geminiApiKey: 'AIzaSyDAR9JEpDaeu2RlYun_u7HWDKawPaD0w2w',
 
       createProject: (name, client, description) => {
         const project: Project = {

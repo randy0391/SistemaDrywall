@@ -4,7 +4,7 @@ import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import { useProjectStore } from '../../stores/useProjectStore';
-import type { WallMeasurement, CeilingMeasurement, Opening } from '../../types';
+import type { WallMeasurement, CeilingMeasurement } from '../../types';
 import confetti from 'canvas-confetti';
 
 interface SketchScannerModalProps {
@@ -52,12 +52,15 @@ export default function SketchScannerModal({ isOpen, onClose, onSuccess }: Sketc
     setErrorMsg(null);
 
     try {
-      if (geminiApiKey && geminiApiKey.trim().length > 10) {
-        // Real Gemini Vision API call
-        const base64Data = imagePreview.split(',')[1];
-        const mimeType = imagePreview.split(';')[0].split(':')[1] || 'image/jpeg';
+      const activeApiKey = (geminiApiKey && geminiApiKey.trim().length > 10)
+        ? geminiApiKey.trim()
+        : 'AIzaSyDAR9JEpDaeu2RlYun_u7HWDKawPaD0w2w';
 
-        const prompt = `Eres un maestro de obra e ingeniero civil experto en construcción en Drywall y tabiquería en seco.
+      // Real Gemini Vision API call with user's key
+      const base64Data = imagePreview.split(',')[1];
+      const mimeType = imagePreview.split(';')[0].split(':')[1] || 'image/jpeg';
+
+      const prompt = `Eres un maestro de obra e ingeniero civil experto en construcción en Drywall y tabiquería en seco.
 Analiza este dibujo, croquis o plano hecho a mano alzada.
 Identifica todas las paredes, tabiques, aberturas (puertas o ventanas) y cielos rasos indicados con sus medidas numéricas (en metros).
 Si alguna pared no tiene altura indicada, asume la altura estándar de 2.40 metros.
@@ -87,89 +90,59 @@ Devuelve EXCLUSIVAMENTE un objeto JSON válido con esta estructura, sin texto ad
   ]
 }`;
 
-        const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey.trim()}`,
+      const requestBody = JSON.stringify({
+        contents: [
+          {
+            parts: [
+              { text: prompt },
+              {
+                inlineData: {
+                  mimeType,
+                  data: base64Data,
+                },
+              },
+            ],
+          },
+        ],
+      });
+
+      // Try gemini-3.5-flash-lite first, fallback to gemini-3.8-flash
+      let response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${activeApiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: requestBody,
+        }
+      );
+
+      if (!response.ok) {
+        response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${activeApiKey}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [
-                {
-                  parts: [
-                    { text: prompt },
-                    {
-                      inlineData: {
-                        mimeType,
-                        data: base64Data,
-                      },
-                    },
-                  ],
-                },
-              ],
-            }),
+            body: requestBody,
           }
         );
-
-        if (!response.ok) {
-          const errData = await response.json();
-          throw new Error(errData?.error?.message || 'Error en la API de Gemini');
-        }
-
-        const data = await response.json();
-        const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        const cleaned = textResponse.replace(/```json/gi, '').replace(/```/g, '').trim();
-        const parsed = JSON.parse(cleaned);
-
-        populateDetected(parsed);
-      } else {
-        // Smart Demonstration Scanner (Simulates AI extraction with realistic drywall measurements)
-        await new Promise((r) => setTimeout(r, 1400)); // realistic thinking delay
-
-        const mockDetected = {
-          projectName: 'Bosquejo Escaneado',
-          notes: 'Croquis detectado con medidas estándar de tabiquería y vanos de puerta',
-          walls: [
-            {
-              id: generateId(),
-              name: 'Pared Frontal',
-              width: 4.2,
-              height: 2.4,
-              type: 'tabique',
-              hasDoubleSide: true,
-              openings: [{ id: generateId(), type: 'puerta', width: 0.9, height: 2.1 }] as Opening[],
-            },
-            {
-              id: generateId(),
-              name: 'Pared Lateral',
-              width: 3.5,
-              height: 2.4,
-              type: 'tabique',
-              hasDoubleSide: true,
-              openings: [{ id: generateId(), type: 'ventana', width: 1.2, height: 1.1 }] as Opening[],
-            },
-            {
-              id: generateId(),
-              name: 'Pared Posterior',
-              width: 4.2,
-              height: 2.4,
-              type: 'tabique',
-              hasDoubleSide: true,
-              openings: [],
-            },
-          ],
-          ceilings: [
-            {
-              id: generateId(),
-              name: 'Cielo Raso Suspendido',
-              width: 4.2,
-              length: 3.5,
-              dropHeight: 0.12,
-            },
-          ],
-        };
-
-        populateDetected(mockDetected);
       }
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData?.error?.message || 'Error al conectar con Gemini Vision');
+      }
+
+      const data = await response.json();
+      const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      
+      // Robust JSON extraction (handles markdown blocks, thoughts, whitespace)
+      const jsonMatch = textResponse.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new Error('No se pudo interpretar el formato JSON del dibujo.');
+      }
+
+      const parsed = JSON.parse(jsonMatch[0]);
+      populateDetected(parsed);
     } catch (err: unknown) {
       console.error(err);
       setErrorMsg(
