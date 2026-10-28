@@ -1,4 +1,4 @@
-import type { Material, WallMeasurement, CeilingMeasurement, Opening, MaterialPrices } from '../types';
+import type { Material, WallMeasurement, CeilingMeasurement, Opening, MaterialPrices, LaborCosts } from '../types';
 import {
   SHEET_WIDTH,
   SHEET_HEIGHT,
@@ -314,3 +314,60 @@ export function getMaterialsByCategory(materials: Material[]) {
     category: key,
   }));
 }
+
+export function calculateLaborCost(
+  walls: WallMeasurement[],
+  ceilings: CeilingMeasurement[],
+  labor: LaborCosts
+) {
+  if (!labor.includeLabor) {
+    return {
+      totalLabor: 0,
+      wallLabor: 0,
+      ceilingLabor: 0,
+      finishingLabor: 0,
+      totalArea: 0,
+    };
+  }
+
+  let wallAreaTotal = 0;
+  let wallLabor = 0;
+
+  for (const w of walls) {
+    const grossArea = w.width * w.height;
+    const openingsArea = calculateOpeningsArea(w.openings);
+    const netArea = Math.max(grossArea - openingsArea, 0);
+    wallAreaTotal += netArea;
+
+    const rate = w.hasDoubleSide
+      ? labor.costPerSqmTabiqueDoble
+      : labor.costPerSqmTabiqueSimple;
+    wallLabor += netArea * rate;
+  }
+
+  let ceilingAreaTotal = 0;
+  let ceilingLabor = 0;
+
+  for (const c of ceilings) {
+    const area = c.width * c.length;
+    ceilingAreaTotal += area;
+    ceilingLabor += area * labor.costPerSqmCieloRaso;
+  }
+
+  const totalDrywallSurface = walls.reduce((sum, w) => {
+    const net = Math.max(w.width * w.height - calculateOpeningsArea(w.openings), 0);
+    return sum + (w.hasDoubleSide ? net * 2 : net);
+  }, 0) + ceilingAreaTotal;
+
+  const finishingLabor = totalDrywallSurface * labor.costPerSqmAcabado;
+  const totalLabor = wallLabor + ceilingLabor + finishingLabor;
+
+  return {
+    totalLabor: Math.round(totalLabor * 100) / 100,
+    wallLabor: Math.round(wallLabor * 100) / 100,
+    ceilingLabor: Math.round(ceilingLabor * 100) / 100,
+    finishingLabor: Math.round(finishingLabor * 100) / 100,
+    totalArea: Math.round((wallAreaTotal + ceilingAreaTotal) * 100) / 100,
+  };
+}
+

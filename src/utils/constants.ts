@@ -1,4 +1,4 @@
-import type { MaterialPrices } from '../types';
+import type { MaterialPrices, LaborCosts } from '../types';
 
 export const DEFAULT_PRICES: MaterialPrices = {
   planchaDrywall12mm: 28.00,
@@ -15,6 +15,15 @@ export const DEFAULT_PRICES: MaterialPrices = {
   esquinero: 8.50,
   fulminante: 0.80,
   clavo: 0.15,
+};
+
+export const DEFAULT_LABOR_COSTS: LaborCosts = {
+  costPerSqmTabiqueSimple: 25.00,  // S/ 25 por m² de tabique una cara
+  costPerSqmTabiqueDoble: 35.00,   // S/ 35 por m² de tabique doble cara
+  costPerSqmCieloRaso: 30.00,      // S/ 30 por m² de cielo raso
+  costPerSqmAcabado: 12.00,        // S/ 12 por m² de encintado y masillado
+  includeLabor: true,              // Habilitado por defecto
+  profitMarginPercent: 10,         // 10% imprevistos / utilidad
 };
 
 // Drywall sheet standard size (in meters)

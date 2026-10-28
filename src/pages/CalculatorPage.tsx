@@ -7,6 +7,7 @@ import Input from '../components/ui/Input';
 import Modal from '../components/ui/Modal';
 import CostChart from '../components/charts/CostChart';
 import MaterialBarChart from '../components/charts/MaterialBarChart';
+import SketchScannerModal from '../components/scanner/SketchScannerModal';
 import type { WallMeasurement, CeilingMeasurement, Opening, ConstructionType } from '../types';
 import { CONSTRUCTION_TYPES } from '../utils/constants';
 import jsPDF from 'jspdf';
@@ -18,11 +19,22 @@ function generateId(): string {
 
 export default function CalculatorPage() {
   const navigate = useNavigate();
-  const { currentProject, createProject, addWall, removeWall, addCeiling, removeCeiling } = useProjectStore();
+  const {
+    currentProject,
+    createProject,
+    addWall,
+    removeWall,
+    addCeiling,
+    removeCeiling,
+    laborCosts,
+    updateLaborCosts,
+  } = useProjectStore();
+
   const [activeTab, setActiveTab] = useState<'tabiques' | 'cieloraso'>('tabiques');
   const [showNewProject, setShowNewProject] = useState(!currentProject);
   const [showAddWall, setShowAddWall] = useState(false);
   const [showAddCeiling, setShowAddCeiling] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
 
   // New project form
   const [projectName, setProjectName] = useState('');
@@ -102,7 +114,6 @@ export default function CalculatorPage() {
     setShowAddCeiling(false);
   };
 
-  // Preset quick templates
   const applyPreset = (width: number, height: number, label: string) => {
     setWallWidth(width.toString());
     setWallHeight(height.toString());
@@ -124,7 +135,7 @@ export default function CalculatorPage() {
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(18);
       doc.setFont('helvetica', 'bold');
-      doc.text('COTIZACIÓN DE MATERIALES - DRYWALL', margin, 18);
+      doc.text('COTIZACIÓN DE MATERIALES Y MANO DE OBRA', margin, 18);
 
       // Project Info
       y = 38;
@@ -171,7 +182,7 @@ export default function CalculatorPage() {
       y += 8;
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(11);
-      doc.text('2. LISTA DETALLADA DE MATERIALES A USAR', margin, y);
+      doc.text('2. LISTA DETALLADA DE MATERIALES', margin, y);
       y += 6;
 
       // Table Header
@@ -190,7 +201,7 @@ export default function CalculatorPage() {
       doc.setTextColor(30, 41, 59);
 
       currentProject.materials.forEach((mat) => {
-        if (y > 270) {
+        if (y > 255) {
           doc.addPage();
           y = 20;
         }
@@ -201,16 +212,51 @@ export default function CalculatorPage() {
         y += 6;
       });
 
-      // Total Box
+      // Subtotal Materiales
       y += 4;
+      doc.setFont('helvetica', 'bold');
+      doc.text(`Subtotal Materiales: S/ ${currentProject.materialsCost.toFixed(2)}`, 120, y);
+
+      // Section: Mano de Obra
+      if (laborCosts.includeLabor && currentProject.laborCost > 0) {
+        y += 10;
+        if (y > 255) {
+          doc.addPage();
+          y = 20;
+        }
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        doc.text('3. MANO DE OBRA Y SERVICIOS', margin, y);
+        y += 6;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        doc.text(`• Instalación de tabiquería y techos + Masillado y acabado`, margin + 4, y);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`S/ ${currentProject.laborCost.toFixed(2)}`, 170, y);
+
+        if (currentProject.profitAmount > 0) {
+          y += 6;
+          doc.setFont('helvetica', 'normal');
+          doc.text(`• Margen de imprevistos y utilidad (${laborCosts.profitMarginPercent}%):`, margin + 4, y);
+          doc.setFont('helvetica', 'bold');
+          doc.text(`S/ ${currentProject.profitAmount.toFixed(2)}`, 170, y);
+        }
+      }
+
+      // Grand Total Box
+      y += 10;
+      if (y > 260) {
+        doc.addPage();
+        y = 20;
+      }
       doc.setDrawColor(37, 99, 235);
       doc.setFillColor(239, 246, 255);
-      doc.rect(115, y, 81, 12, 'FD');
+      doc.rect(100, y, 96, 14, 'FD');
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11);
+      doc.setFontSize(12);
       doc.setTextColor(29, 78, 216);
-      doc.text('TOTAL ESTIMADO:', 120, y + 8);
-      doc.text(`S/ ${currentProject.totalCost.toFixed(2)}`, 165, y + 8);
+      doc.text('TOTAL COTIZACIÓN:', 104, y + 9);
+      doc.text(`S/ ${currentProject.totalCost.toFixed(2)}`, 155, y + 9);
 
       // Save PDF
       doc.save(`Cotizacion_Drywall_${currentProject.name.replace(/\s+/g, '_')}.pdf`);
@@ -243,11 +289,29 @@ export default function CalculatorPage() {
   if (showNewProject || !currentProject) {
     return (
       <div className="py-6 space-y-4">
+        {/* Banner Escanear Dibujo */}
+        <button
+          onClick={() => setShowScanner(true)}
+          className="w-full p-4 bg-gradient-to-r from-violet-600 via-indigo-600 to-blue-600 text-white rounded-3xl shadow-lg flex items-center justify-between transition-all active:scale-[0.99] cursor-pointer"
+        >
+          <div className="flex items-center gap-3 text-left">
+            <span className="text-3xl">📸</span>
+            <div>
+              <p className="font-extrabold text-sm sm:text-base">¿Tienes un dibujo a mano?</p>
+              <p className="text-xs text-violet-200">Tómale foto para detectar medidas con IA</p>
+            </div>
+          </div>
+          <span className="bg-white/20 text-white font-bold text-xs px-3 py-1.5 rounded-full">
+            Escanear ✨
+          </span>
+        </button>
+
         <div className="text-center py-2">
           <span className="text-4xl">📐</span>
           <h2 className="text-xl font-bold text-slate-900 mt-2">Nuevo Proyecto de Drywall</h2>
-          <p className="text-xs text-slate-500">Ingresa los datos para empezar a calcular</p>
+          <p className="text-xs text-slate-500">O ingresa los datos manualmente</p>
         </div>
+
         <Card className="space-y-4">
           <Input
             label="Nombre del Proyecto / Obra"
@@ -271,12 +335,32 @@ export default function CalculatorPage() {
             Comenzar a Calcular 🚀
           </Button>
         </Card>
+
+        <SketchScannerModal
+          isOpen={showScanner}
+          onClose={() => setShowScanner(false)}
+          onSuccess={() => setShowNewProject(false)}
+        />
       </div>
     );
   }
 
   return (
     <div className="py-3 space-y-4">
+      {/* AI Sketch Scanner Fast Action Banner */}
+      <button
+        onClick={() => setShowScanner(true)}
+        className="w-full py-2.5 px-3.5 bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600 text-white rounded-2xl shadow-md font-bold text-xs sm:text-sm flex items-center justify-between hover:opacity-95 active:scale-[0.99] transition-all cursor-pointer border border-purple-400"
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-xl">📸</span>
+          <span className="text-left font-black">Escanear Dibujo a Mano con IA</span>
+        </div>
+        <span className="bg-white/20 text-white text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-full">
+          Foto / Croquis
+        </span>
+      </button>
+
       {/* Project Header Bar */}
       <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
         <div>
@@ -336,7 +420,7 @@ export default function CalculatorPage() {
               <span className="text-3xl">🧱</span>
               <p className="text-sm font-semibold text-slate-700">Aún no has agregado tabiques</p>
               <p className="text-xs text-slate-400">
-                Presiona el botón de abajo para ingresar las medidas de tu primera pared
+                Presiona el botón de abajo para ingresar medidas o usa el escáner de foto
               </p>
             </div>
           ) : (
@@ -438,6 +522,7 @@ export default function CalculatorPage() {
       {/* Calculated Materials Section */}
       {currentProject.materials.length > 0 && (
         <div className="space-y-4 pt-2">
+          {/* Section title & PDF Export */}
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
@@ -454,6 +539,7 @@ export default function CalculatorPage() {
             </button>
           </div>
 
+          {/* Categorized Materials Cards */}
           {(['estructura', 'plancha', 'acabado', 'fijacion'] as const).map((cat) => {
             const catMaterials = currentProject.materials.filter((m) => m.category === cat);
             if (catMaterials.length === 0) return null;
@@ -498,20 +584,86 @@ export default function CalculatorPage() {
             );
           })}
 
-          {/* Grand Total Box */}
-          <div className="bg-gradient-to-r from-blue-700 to-indigo-800 text-white p-4 rounded-2xl shadow-lg flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-blue-200 uppercase tracking-wider">
-                Presupuesto Total Estimado
-              </p>
-              <p className="text-2xl font-black mt-0.5">S/ {currentProject.totalCost.toFixed(2)}</p>
+          {/* 👷 MANO DE OBRA & PRESUPUESTO INTEGRAL CARD */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">👷</span>
+                <div>
+                  <h4 className="font-bold text-sm text-slate-900">Mano de Obra</h4>
+                  <p className="text-[11px] text-slate-500">Instalación y acabados</p>
+                </div>
+              </div>
+
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={laborCosts.includeLabor}
+                  onChange={(e) => updateLaborCosts({ includeLabor: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
             </div>
-            <button
-              onClick={() => navigate('/viewer3d')}
-              className="px-4 py-2 bg-white text-blue-800 text-xs font-bold rounded-xl shadow-md hover:bg-blue-50 transition-all active:scale-95 cursor-pointer"
-            >
-              Ver Diseño 3D 🎨
-            </button>
+
+            {laborCosts.includeLabor && (
+              <div className="pt-2 border-t border-slate-100 space-y-2 text-xs">
+                <div className="flex justify-between text-slate-600">
+                  <span>Tabiquería (S/ {laborCosts.costPerSqmTabiqueDoble}/m²):</span>
+                  <span className="font-semibold text-slate-800">
+                    S/ {currentProject.laborCost ? (currentProject.laborCost * 0.7).toFixed(2) : '0.00'}
+                  </span>
+                </div>
+                <div className="flex justify-between text-slate-600">
+                  <span>Encintado y masillado (S/ {laborCosts.costPerSqmAcabado}/m²):</span>
+                  <span className="font-semibold text-slate-800">
+                    S/ {currentProject.laborCost ? (currentProject.laborCost * 0.3).toFixed(2) : '0.00'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-slate-600 font-medium">Margen imprevistos/utilidad:</span>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={laborCosts.profitMarginPercent}
+                      onChange={(e) => updateLaborCosts({ profitMarginPercent: parseFloat(e.target.value) || 0 })}
+                      className="w-14 px-2 py-0.5 bg-slate-50 border border-slate-300 rounded text-center text-xs font-bold"
+                    />
+                    <span className="text-slate-500 font-bold">%</span>
+                  </div>
+                </div>
+                <div className="p-2.5 bg-blue-50/70 rounded-xl flex items-center justify-between text-blue-900 font-bold">
+                  <span>Total Mano de Obra:</span>
+                  <span>S/ {currentProject.laborCost.toFixed(2)}</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Grand Total Box */}
+          <div className="bg-gradient-to-r from-blue-700 to-indigo-800 text-white p-4 rounded-2xl shadow-lg space-y-2">
+            <div className="flex items-center justify-between text-xs text-blue-200">
+              <span>Materiales: S/ {currentProject.materialsCost.toFixed(2)}</span>
+              {laborCosts.includeLabor && (
+                <span>Mano de Obra: S/ {currentProject.laborCost.toFixed(2)}</span>
+              )}
+            </div>
+            <div className="flex items-center justify-between pt-1 border-t border-blue-600/60">
+              <div>
+                <p className="text-xs font-medium text-blue-200 uppercase tracking-wider">
+                  Presupuesto Total Estimado
+                </p>
+                <p className="text-2xl font-black mt-0.5">S/ {currentProject.totalCost.toFixed(2)}</p>
+              </div>
+              <button
+                onClick={() => navigate('/viewer3d')}
+                className="px-4 py-2 bg-white text-blue-800 text-xs font-bold rounded-xl shadow-md hover:bg-blue-50 transition-all active:scale-95 cursor-pointer"
+              >
+                Ver Diseño 3D 🎨
+              </button>
+            </div>
           </div>
 
           {/* Interactive Charts */}
@@ -719,6 +871,12 @@ export default function CalculatorPage() {
           </Button>
         </div>
       </Modal>
+
+      {/* AI Sketch Scanner Modal */}
+      <SketchScannerModal
+        isOpen={showScanner}
+        onClose={() => setShowScanner(false)}
+      />
     </div>
   );
 }

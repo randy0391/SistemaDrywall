@@ -39,6 +39,15 @@ export interface CeilingMeasurement {
   dropHeight: number; // altura de descuelgue
 }
 
+export interface LaborCosts {
+  costPerSqmTabiqueSimple: number; // S/ por m² (ej. 25.00)
+  costPerSqmTabiqueDoble: number;  // S/ por m² (ej. 35.00)
+  costPerSqmCieloRaso: number;     // S/ por m² (ej. 30.00)
+  costPerSqmAcabado: number;       // S/ por m² masillado/encintado (ej. 12.00)
+  includeLabor: boolean;           // si se suma al presupuesto
+  profitMarginPercent: number;     // % utilidad / imprevistos (ej. 10%)
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -48,7 +57,12 @@ export interface Project {
   walls: WallMeasurement[];
   ceilings: CeilingMeasurement[];
   materials: Material[];
+  materialsCost: number;
+  laborCost: number;
+  profitAmount: number;
   totalCost: number;
+  laborSettings?: LaborCosts;
+  sketchImage?: string; // base64 de la foto del dibujo
   status: 'borrador' | 'cotizado' | 'aprobado' | 'en_proceso' | 'completado';
   createdAt: string;
   updatedAt: string;
@@ -75,7 +89,7 @@ export interface MaterialPrices {
 export interface Wall3D {
   id: string;
   position: [number, number, number];
-  dimensions: [number, number, number]; // width, height, depth
+  dimensions: [number, number, number];
   rotation: [number, number, number];
   color: string;
   showStructure: boolean;
@@ -87,4 +101,12 @@ export interface Scene3D {
   showGrid: boolean;
   showDimensions: boolean;
   viewMode: 'acabado' | 'estructura' | 'wireframe';
+}
+
+// AI Sketch Detection Result
+export interface DetectedSketch {
+  projectName?: string;
+  walls: WallMeasurement[];
+  ceilings: CeilingMeasurement[];
+  notes?: string;
 }
