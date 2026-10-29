@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useProjectStore } from '../stores/useProjectStore';
-import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import Modal from '../components/ui/Modal';
@@ -18,42 +17,79 @@ function generateId(): string {
 export default function ElectricalPage() {
   const navigate = useNavigate();
   const {
+    projects,
     currentProject,
+    currentElectricalProjectId,
+    setCurrentElectricalProject,
     createProject,
+    linkProject,
     addElectricalItem,
     updateElectricalItem,
     removeElectricalItem,
     laborCosts,
   } = useProjectStore();
 
-  const [showAddModal, setShowAddModal] = useState(false);
+  // Find the active project for this electrical view
+  const activeProject =
+    projects.find((p) => p.id === currentElectricalProjectId) ||
+    (currentProject?.projectType === 'electrico' || currentProject?.projectType === 'mixto'
+      ? currentProject
+      : projects.find((p) => p.projectType === 'electrico') || currentProject);
+
+  const [showAddPointModal, setShowAddPointModal] = useState(false);
+  const [showNewProjectModal, setShowNewProjectModal] = useState(!activeProject);
+  const [showSwitchProjectModal, setShowSwitchProjectModal] = useState(false);
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  // Add Point Form
   const [selectedType, setSelectedType] = useState<ElectricalPointType>('tomacorriente_doble');
   const [pointLocation, setPointLocation] = useState('');
   const [pointQuantity, setPointQuantity] = useState('1');
   const [pointNotes, setPointNotes] = useState('');
 
-  // New project modal
-  const [showNewProject, setShowNewProject] = useState(!currentProject);
-  const [projectName, setProjectName] = useState('');
-  const [clientName, setClientName] = useState('');
+  // New Project Form
+  const [newProjectName, setNewProjectName] = useState('');
+  const [newClientName, setNewClientName] = useState('');
+  const [linkMode, setLinkMode] = useState<'independent' | 'linked'>('independent');
+  const [selectedDrywallId, setSelectedDrywallId] = useState('');
 
-  // WhatsApp Modal
-  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const electricalItems = activeProject?.electricalItems || [];
+  const electricalMaterials = activeProject?.electricalMaterials || [];
+  const materialsCost = activeProject?.electricalMaterialsCost || 0;
+  const laborCost = activeProject?.electricalLaborCost || 0;
+  const totalCost = activeProject?.electricalTotalCost || 0;
 
-  const electricalItems = currentProject?.electricalItems || [];
-  const electricalMaterials = currentProject?.electricalMaterials || [];
-  const materialsCost = currentProject?.electricalMaterialsCost || 0;
-  const laborCost = currentProject?.electricalLaborCost || 0;
-  const totalCost = currentProject?.electricalTotalCost || 0;
+  const isLinked = Boolean(activeProject?.linkedProjectId || activeProject?.projectType === 'mixto');
+  const linkedDrywallProject = isLinked
+    ? projects.find((p) => p.id === activeProject?.linkedProjectId)
+    : null;
 
-  const handleCreateProject = () => {
-    if (!projectName.trim()) return;
-    createProject(projectName, clientName, 'Trabajos eléctricos monofásicos');
-    setShowNewProject(false);
+  const handleCreateElectricalProject = () => {
+    if (!newProjectName.trim()) return;
+
+    if (linkMode === 'linked' && selectedDrywallId) {
+      // Coupled to existing drywall project
+      linkProject(selectedDrywallId, selectedDrywallId);
+      setCurrentElectricalProject(selectedDrywallId);
+    } else {
+      // 100% Independent Electrical Project!
+      const newProj = createProject(
+        newProjectName,
+        newClientName,
+        'Instalaciones eléctricas residenciales y comerciales 220V',
+        'electrico'
+      );
+      setCurrentElectricalProject(newProj.id);
+    }
+
+    setNewProjectName('');
+    setNewClientName('');
+    setShowNewProjectModal(false);
   };
 
   const handleAddPoint = () => {
+    if (!activeProject) return;
     const qty = parseInt(pointQuantity) || 1;
     const config = ELECTRICAL_POINT_CONFIGS[selectedType];
     const newItem: ElectricalItem = {
@@ -65,33 +101,35 @@ export default function ElectricalPage() {
       notes: pointNotes.trim() || undefined,
     };
 
-    addElectricalItem(newItem);
+    addElectricalItem(newItem, activeProject.id);
     setPointLocation('');
     setPointQuantity('1');
     setPointNotes('');
-    setShowAddModal(false);
+    setShowAddPointModal(false);
   };
 
   const handleIncrement = (item: ElectricalItem) => {
-    updateElectricalItem(item.id, { quantity: (item.quantity || 1) + 1 });
+    if (!activeProject) return;
+    updateElectricalItem(item.id, { quantity: (item.quantity || 1) + 1 }, activeProject.id);
   };
 
   const handleDecrement = (item: ElectricalItem) => {
+    if (!activeProject) return;
     if ((item.quantity || 1) <= 1) {
-      removeElectricalItem(item.id);
+      removeElectricalItem(item.id, activeProject.id);
     } else {
-      updateElectricalItem(item.id, { quantity: (item.quantity || 1) - 1 });
+      updateElectricalItem(item.id, { quantity: (item.quantity || 1) - 1 }, activeProject.id);
     }
   };
 
   const openAddForType = (type: ElectricalPointType) => {
     setSelectedType(type);
-    setShowAddModal(true);
+    setShowAddPointModal(true);
   };
 
-  // WhatsApp order
-  const whatsAppOrderText = currentProject
-    ? formatElectricalWhatsAppOrder(currentProject, electricalItems, electricalMaterials)
+  // WhatsApp order text
+  const whatsAppOrderText = activeProject
+    ? formatElectricalWhatsAppOrder(activeProject, electricalItems, electricalMaterials)
     : '';
 
   const handleCopyWhatsApp = async () => {
@@ -111,7 +149,7 @@ export default function ElectricalPage() {
 
   // Export PDF
   const exportPDF = () => {
-    if (!currentProject) return;
+    if (!activeProject) return;
 
     try {
       const doc = new jsPDF();
@@ -119,7 +157,7 @@ export default function ElectricalPage() {
       let y = 20;
 
       // Header Banner
-      doc.setFillColor(234, 88, 12); // Orange / Amber for Electrical
+      doc.setFillColor(217, 119, 6); // Warm Amber
       doc.rect(0, 0, 210, 28, 'F');
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(16);
@@ -131,14 +169,14 @@ export default function ElectricalPage() {
       doc.setTextColor(30, 41, 59);
       doc.setFontSize(11);
       doc.setFont('helvetica', 'bold');
-      doc.text(`Proyecto: ${currentProject.name}`, margin, y);
+      doc.text(`Proyecto: ${activeProject.name}`, margin, y);
       y += 6;
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
-      doc.text(`Cliente: ${currentProject.client || 'Particular'}`, margin, y);
+      doc.text(`Cliente: ${activeProject.client || 'Particular'}`, margin, y);
       doc.text(`Fecha: ${new Date().toLocaleDateString('es-PE')}`, 140, y);
       y += 5;
-      doc.text('Sistema: Monofásico 220V Residencial / Comercial (Sin trifásico)', margin, y);
+      doc.text('Sistema: Monofásico 220V Residencial y Comercial (Estricto sin trifásico)', margin, y);
 
       // Section 1: Puntos
       y += 10;
@@ -153,11 +191,7 @@ export default function ElectricalPage() {
       electricalItems.forEach((it) => {
         const config = ELECTRICAL_POINT_CONFIGS[it.type];
         const loc = it.location ? ` — Ubicación: ${it.location}` : '';
-        doc.text(
-          `• ${it.quantity}x ${config.label}${loc}`,
-          margin + 2,
-          y
-        );
+        doc.text(`• ${it.quantity}x ${config.label}${loc}`, margin + 2, y);
         y += 5.5;
       });
 
@@ -168,9 +202,10 @@ export default function ElectricalPage() {
       doc.text('2. MATERIALES ELÉCTRICOS A DESPACHAR', margin, y);
       y += 6;
 
-      doc.setFillColor(241, 245, 249);
+      doc.setFillColor(254, 243, 199);
       doc.rect(margin, y - 4, 182, 7, 'F');
       doc.setFontSize(8.5);
+      doc.setTextColor(120, 53, 15);
       doc.text('Descripción del Material', margin + 2, y);
       doc.text('Cant.', 120, y);
       doc.text('P. Unit.', 145, y);
@@ -217,17 +252,16 @@ export default function ElectricalPage() {
         doc.addPage();
         y = 20;
       }
-      doc.setDrawColor(234, 88, 12);
-      doc.setFillColor(255, 247, 237);
+      doc.setDrawColor(217, 119, 6);
+      doc.setFillColor(254, 243, 199);
       doc.rect(95, y, 101, 14, 'FD');
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(11);
-      doc.setTextColor(194, 65, 12);
+      doc.setTextColor(180, 83, 9);
       doc.text('TOTAL PRESUPUESTO ELÉCTRICO:', 98, y + 9);
       doc.text(`S/ ${totalCost.toFixed(2)}`, 152, y + 9);
 
-      doc.save(`Cotizacion_Electrica_${currentProject.name.replace(/\s+/g, '_')}.pdf`);
-
+      doc.save(`Cotizacion_Electrica_${activeProject.name.replace(/\s+/g, '_')}.pdf`);
       confetti({ particleCount: 70, spread: 60, origin: { y: 0.8 } });
     } catch (e) {
       console.error(e);
@@ -235,102 +269,96 @@ export default function ElectricalPage() {
     }
   };
 
-  if (showNewProject || !currentProject) {
-    return (
-      <div className="py-6 space-y-4 max-w-lg mx-auto">
-        <div className="text-center py-2">
-          <span className="text-4xl">⚡</span>
-          <h2 className="text-xl font-bold text-slate-900 mt-2">Módulo de Instalaciones Eléctricas</h2>
-          <p className="text-xs text-slate-500">Exclusivamente monofásico 220V (residencial y comercial)</p>
-        </div>
-
-        <Card className="space-y-4">
-          <Input
-            label="Nombre del Proyecto / Obra"
-            placeholder="Ej: Remodelación Eléctrica Sala y Cocina"
-            value={projectName}
-            onChange={(e) => setProjectName(e.target.value)}
-          />
-          <Input
-            label="Cliente / Contacto"
-            placeholder="Nombre del cliente o departamento"
-            value={clientName}
-            onChange={(e) => setClientName(e.target.value)}
-          />
-          <Button fullWidth onClick={handleCreateProject} className="bg-amber-600 hover:bg-amber-700 font-bold">
-            Comenzar Presupuesto Eléctrico ⚡
-          </Button>
-        </Card>
-      </div>
-    );
-  }
-
   return (
-    <div className="py-3 space-y-4 max-w-lg mx-auto">
-      {/* Module Switcher Header: Separado de Drywall */}
-      <div className="flex bg-slate-200/80 p-1 rounded-xl">
+    <div className="py-2 space-y-4 max-w-lg mx-auto">
+      {/* Top Mode Header Banner: Beautiful Frosted Switcher */}
+      <div className="flex bg-slate-200/80 p-1 rounded-2xl shadow-inner">
         <button
           onClick={() => navigate('/calculator')}
-          className="flex-1 py-2 text-xs font-bold rounded-lg text-slate-600 hover:text-slate-900 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+          className="flex-1 py-2 text-xs font-bold rounded-xl text-slate-600 hover:text-slate-900 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
         >
-          <span>🧱</span> Ir a Drywall
+          <span>🧱</span> Módulo Drywall
         </button>
         <button
-          className="flex-1 py-2 text-xs font-bold rounded-lg bg-white text-amber-700 shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+          className="flex-1 py-2 text-xs font-black rounded-xl bg-white text-amber-700 shadow-sm flex items-center justify-center gap-1.5 cursor-pointer border border-amber-200/50"
         >
-          <span>⚡</span> Módulo Eléctrico
+          <span>⚡</span> Módulo Eléctrico 220V
         </button>
       </div>
 
-      {/* Project Header Card */}
-      <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm space-y-2.5">
-        <div className="flex items-center justify-between gap-2">
+      {/* Active Project Card with Clear Independent vs Linked Status */}
+      <div className="bg-white p-4 rounded-3xl border border-slate-200/90 shadow-sm space-y-3">
+        <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-[10px] font-black uppercase tracking-wider text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md shrink-0">
-                ⚡ Electricidad Monofásica
-              </span>
-              <h2 className="text-sm sm:text-base font-bold text-slate-900 truncate">
-                {currentProject.name}
-              </h2>
+              {isLinked ? (
+                <span className="text-[10px] font-black uppercase tracking-wider text-purple-700 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <span>🔗</span> Vinculado a Drywall
+                </span>
+              ) : (
+                <span className="text-[10px] font-black uppercase tracking-wider text-amber-800 bg-amber-50 border border-amber-300 px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <span>⚡</span> Proyecto 100% Independiente
+                </span>
+              )}
             </div>
-            <p className="text-xs text-slate-500 mt-0.5 truncate">
-              {currentProject.client || 'Sin cliente especificado'} · 220V Monofásico
+
+            <h2 className="text-base font-black text-slate-900 mt-1 truncate">
+              {activeProject ? activeProject.name : 'Sin proyecto eléctrico seleccionado'}
+            </h2>
+            <p className="text-xs text-slate-500 truncate">
+              {activeProject?.client ? `Cliente: ${activeProject.client}` : 'Particular'} · Monofásico 220V
+              {linkedDrywallProject && ` (Vinculado a: ${linkedDrywallProject.name})`}
             </p>
           </div>
 
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="shrink-0 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer shadow-xs"
-          >
-            + Agregar Punto
-          </button>
+          <div className="flex gap-1 shrink-0">
+            <button
+              onClick={() => setShowSwitchProjectModal(true)}
+              title="Cambiar proyecto eléctrico"
+              className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+            >
+              🔄 Cambiar
+            </button>
+            <button
+              onClick={() => setShowNewProjectModal(true)}
+              title="Crear nuevo proyecto eléctrico"
+              className="px-2.5 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-bold rounded-xl transition-all shadow-xs cursor-pointer"
+            >
+              + Nuevo
+            </button>
+          </div>
         </div>
 
-        {/* Action Row: WhatsApp & PDF */}
+        {/* Action Row */}
         {electricalMaterials.length > 0 && (
           <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
             <button
               onClick={() => setShowWhatsAppModal(true)}
-              className="py-2 px-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl border border-emerald-200 text-xs font-bold flex items-center justify-center gap-1.5 active:scale-95 transition-transform cursor-pointer"
+              className="py-2 px-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl border border-emerald-200 text-xs font-bold flex items-center justify-center gap-1.5 active:scale-95 transition-transform cursor-pointer shadow-xs"
             >
-              <span>📲</span> Pedido Eléctrico WhatsApp
+              <span>📲</span> Pedido WhatsApp
             </button>
             <button
               onClick={exportPDF}
-              className="py-2 px-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 active:scale-95 transition-transform cursor-pointer"
+              className="py-2 px-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 active:scale-95 transition-transform cursor-pointer shadow-xs"
             >
-              <span>📄</span> Exportar PDF Eléctrico
+              <span>📄</span> Exportar PDF
             </button>
           </div>
         )}
       </div>
 
       {/* Quick Add Shortcuts Grid */}
-      <div className="space-y-1.5">
-        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-          Selección Rápida de Puntos Eléctricos
-        </label>
+      <div className="space-y-2">
+        <div className="flex items-center justify-between px-1">
+          <label className="text-xs font-black text-slate-400 uppercase tracking-wider">
+            Agregar Puntos Eléctricos Monofásicos
+          </label>
+          <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
+            220V Residencial
+          </span>
+        </div>
+
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {(
             [
@@ -350,127 +378,130 @@ export default function ElectricalPage() {
                 key={type}
                 type="button"
                 onClick={() => openAddForType(type)}
-                className="p-2.5 bg-white hover:bg-amber-50/60 border border-slate-200 hover:border-amber-300 rounded-2xl text-left transition-all active:scale-95 cursor-pointer shadow-xs space-y-1"
+                className="p-3 bg-white hover:bg-amber-50/50 border border-slate-200 hover:border-amber-400 rounded-2xl text-left transition-all active:scale-95 cursor-pointer shadow-xs space-y-1.5 group"
               >
-                <span className="text-xl block">{conf.icon}</span>
-                <p className="text-xs font-bold text-slate-800 leading-tight line-clamp-1">{conf.label}</p>
-                <p className="text-[10px] text-slate-400 truncate">
-                  {conf.wireType === 'cable14AWG' ? '#14 AWG' : conf.wireType === 'cable12AWG' ? '#12 AWG' : '#10 AWG'}
-                </p>
+                <div className="w-8 h-8 rounded-xl bg-amber-100/70 text-amber-800 flex items-center justify-center text-lg group-hover:scale-105 transition-transform">
+                  {conf.icon}
+                </div>
+                <div>
+                  <p className="text-xs font-black text-slate-900 leading-tight line-clamp-1">{conf.label}</p>
+                  <p className="text-[10px] text-slate-400 truncate mt-0.5">
+                    {conf.wireType === 'cable14AWG' ? '#14 AWG' : conf.wireType === 'cable12AWG' ? '#12 AWG' : '#10 AWG'}
+                  </p>
+                </div>
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* Active Electrical Points List */}
+      {/* Active Points List */}
       <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+        <div className="flex items-center justify-between px-1">
+          <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
             <span>📍</span> Puntos Registrados ({electricalItems.reduce((acc, it) => acc + (it.quantity || 1), 0)})
           </h3>
-          <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md">
+          <span className="text-xs font-bold text-amber-800">
             Mano de obra: S/ {laborCost.toFixed(2)}
           </span>
         </div>
 
         {electricalItems.length === 0 ? (
-          <div className="bg-white p-6 rounded-2xl border border-dashed border-slate-300 text-center space-y-2">
+          <div className="bg-white p-6 rounded-3xl border border-dashed border-slate-300 text-center space-y-2">
             <span className="text-3xl">🔌</span>
-            <p className="text-sm font-semibold text-slate-700">Aún no has agregado puntos eléctricos</p>
+            <p className="text-sm font-bold text-slate-800">Sin puntos eléctricos agregados</p>
             <p className="text-xs text-slate-400">
-              Presiona cualquiera de los botones de arriba para ingresar tomacorrientes, conmutados o alumbrado.
+              Toca cualquiera de los botones de arriba para registrar tomacorrientes, conmutados o alumbrado.
             </p>
           </div>
         ) : (
           electricalItems.map((item) => {
             const conf = ELECTRICAL_POINT_CONFIGS[item.type];
             return (
-              <Card key={item.id} className="relative overflow-hidden border-l-4 border-l-amber-500">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-1 flex-1 pr-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg">{conf.icon}</span>
-                      <h4 className="font-bold text-slate-900 text-sm">{conf.name}</h4>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-slate-600 flex-wrap">
-                      {item.location && (
-                        <span className="bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-medium">
-                          📍 {item.location}
-                        </span>
-                      )}
-                      <span className="text-amber-800 font-semibold bg-amber-50 px-1.5 py-0.5 rounded">
-                        {conf.wireType === 'cable14AWG' ? 'Cable #14' : conf.wireType === 'cable12AWG' ? 'Cable #12' : 'Cable #10'} · Tubo {conf.conduitType}"
+              <div
+                key={item.id}
+                className="p-3.5 bg-white rounded-2xl border border-slate-200/90 shadow-xs flex items-center justify-between gap-3"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">{conf.icon}</span>
+                    <h4 className="font-bold text-slate-900 text-sm truncate">{conf.name}</h4>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-slate-500 mt-1 flex-wrap">
+                    {item.location && (
+                      <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md font-semibold text-[10px]">
+                        📍 {item.location}
                       </span>
-                    </div>
-                    {item.notes && <p className="text-[11px] text-slate-400">{item.notes}</p>}
-                  </div>
-
-                  {/* Quantity Stepper */}
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      onClick={() => handleDecrement(item)}
-                      className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center cursor-pointer transition-colors"
-                    >
-                      -
-                    </button>
-                    <span className="w-6 text-center font-black text-sm text-slate-800">
-                      {item.quantity}
+                    )}
+                    <span className="text-amber-800 font-bold bg-amber-50 px-2 py-0.5 rounded-md text-[10px]">
+                      {conf.wireType === 'cable14AWG' ? 'Cable #14' : conf.wireType === 'cable12AWG' ? 'Cable #12' : 'Cable #10'} · Tubo {conf.conduitType}"
                     </span>
-                    <button
-                      onClick={() => handleIncrement(item)}
-                      className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center cursor-pointer transition-colors"
-                    >
-                      +
-                    </button>
-                    <button
-                      onClick={() => removeElectricalItem(item.id)}
-                      className="ml-2 text-slate-300 hover:text-red-500 transition-colors cursor-pointer"
-                    >
-                      🗑️
-                    </button>
                   </div>
+                  {item.notes && <p className="text-[11px] text-slate-400 mt-1">{item.notes}</p>}
                 </div>
-              </Card>
+
+                {/* Quantity Stepper */}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    onClick={() => handleDecrement(item)}
+                    className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center cursor-pointer transition-colors"
+                  >
+                    -
+                  </button>
+                  <span className="w-6 text-center font-black text-sm text-slate-900">
+                    {item.quantity}
+                  </span>
+                  <button
+                    onClick={() => handleIncrement(item)}
+                    className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center cursor-pointer transition-colors"
+                  >
+                    +
+                  </button>
+                  <button
+                    onClick={() => removeElectricalItem(item.id, activeProject?.id)}
+                    className="ml-1 text-slate-300 hover:text-red-500 transition-colors cursor-pointer p-1"
+                  >
+                    🗑️
+                  </button>
+                </div>
+              </div>
             );
           })
         )}
       </div>
 
-      {/* Calculated Electrical Materials Section */}
+      {/* Calculated Materials Section */}
       {electricalMaterials.length > 0 && (
-        <div className="space-y-4 pt-2">
+        <div className="space-y-4 pt-1">
           <div>
-            <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-              <span>📦</span> Materiales Eléctricos Necesarios
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider px-1">
+              Lista de Materiales a Comprar
             </h3>
-            <p className="text-[11px] text-slate-500">
-              Metrados con 10% de holgura técnica para cableado y canalización
-            </p>
+            <p className="text-[11px] text-slate-500 px-1">Calculado con 10% de desperdicio y holgura técnica</p>
           </div>
 
-          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-            <div className="bg-amber-50/80 px-4 py-2.5 border-b border-amber-100 flex items-center justify-between">
-              <span className="text-xs font-bold text-amber-900 uppercase tracking-wider flex items-center gap-1.5">
-                <span>⚡</span> Lista de Compra para Ferretería Eléctrica
+          <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xs">
+            <div className="bg-amber-50/70 px-4 py-3 border-b border-amber-100 flex items-center justify-between">
+              <span className="text-xs font-bold text-amber-950 uppercase tracking-wider flex items-center gap-1.5">
+                <span>⚡</span> Desglose para Ferretería Eléctrica
               </span>
-              <span className="text-xs font-bold text-amber-900">S/ {materialsCost.toFixed(2)}</span>
+              <span className="text-xs font-black text-amber-900">S/ {materialsCost.toFixed(2)}</span>
             </div>
 
             <div className="divide-y divide-slate-100 p-2">
               {electricalMaterials.map((mat) => (
-                <div key={mat.id} className="py-2 px-2 flex items-center justify-between text-xs">
+                <div key={mat.id} className="py-2.5 px-2 flex items-center justify-between text-xs">
                   <div className="flex-1 pr-2">
-                    <p className="font-semibold text-slate-800">{mat.name}</p>
+                    <p className="font-bold text-slate-800">{mat.name}</p>
                     {mat.description && (
                       <p className="text-[10px] text-slate-400 mt-0.5">{mat.description}</p>
                     )}
                   </div>
-                  <div className="text-right">
-                    <span className="inline-block px-2 py-0.5 bg-amber-50 text-amber-800 font-bold rounded text-xs border border-amber-200">
+                  <div className="text-right shrink-0">
+                    <span className="inline-block px-2.5 py-0.5 bg-amber-50 text-amber-800 font-black rounded-lg text-xs border border-amber-200/60">
                       {mat.quantity} {mat.unit}
                     </span>
-                    <p className="text-[11px] text-slate-600 font-medium mt-0.5">
+                    <p className="text-[11px] text-slate-600 font-semibold mt-0.5">
                       S/ {mat.totalPrice.toFixed(2)}
                     </p>
                   </div>
@@ -479,13 +510,13 @@ export default function ElectricalPage() {
             </div>
           </div>
 
-          {/* Mano de Obra Eléctrica Breakdown Card */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-2.5">
+          {/* Mano de Obra Card */}
+          <div className="bg-white rounded-3xl border border-slate-200 p-4 shadow-xs space-y-2.5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="text-xl">👷</span>
                 <div>
-                  <h4 className="font-bold text-sm text-slate-900">Mano de Obra por Puntos Eléctricos</h4>
+                  <h4 className="font-bold text-sm text-slate-900">Mano de Obra por Puntos</h4>
                   <p className="text-[11px] text-slate-500">Tarifas configuradas en ajustes</p>
                 </div>
               </div>
@@ -495,77 +526,208 @@ export default function ElectricalPage() {
             <div className="pt-2 border-t border-slate-100 space-y-1.5 text-xs text-slate-600">
               <div className="flex justify-between">
                 <span>Tomacorrientes (S/ {laborCosts.costPerPointTomacorriente}/pto):</span>
-                <span className="font-semibold text-slate-800">
+                <span className="font-bold text-slate-800">
                   {electricalItems
                     .filter((it) => it.type.startsWith('tomacorriente'))
                     .reduce((s, it) => s + it.quantity, 0)} puntos
                 </span>
               </div>
               <div className="flex justify-between">
-                <span>Alumbrado y Conmutados:</span>
-                <span className="font-semibold text-slate-800">
+                <span>Puntos de Alumbrado y Conmutados:</span>
+                <span className="font-bold text-slate-800">
                   {electricalItems
                     .filter((it) => it.type.startsWith('luz'))
                     .reduce((s, it) => s + it.quantity, 0)} puntos
                 </span>
               </div>
               {electricalItems.some((it) => it.type === 'tablero_monofasico') && (
-                <div className="flex justify-between text-amber-800 font-medium">
-                  <span>Tablero Monofásico (peinado y llaves):</span>
+                <div className="flex justify-between text-amber-800 font-semibold">
+                  <span>Tablero Monofásico:</span>
                   <span>S/ {laborCosts.costPerTableroMonofasico}</span>
                 </div>
               )}
             </div>
           </div>
 
-          {/* Grand Total Eléctrico Box */}
-          <div className="bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white p-4 rounded-2xl shadow-lg space-y-2">
+          {/* Grand Total Eléctrico Card */}
+          <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white p-5 rounded-3xl shadow-xl shadow-amber-500/20 space-y-2">
             <div className="flex items-center justify-between text-xs text-amber-100">
-              <span>Materiales Eléctricos: S/ {materialsCost.toFixed(2)}</span>
+              <span>Materiales: S/ {materialsCost.toFixed(2)}</span>
               <span>Mano de Obra: S/ {laborCost.toFixed(2)}</span>
             </div>
-            <div className="flex items-center justify-between pt-1 border-t border-amber-500/60">
+            <div className="flex items-center justify-between pt-1 border-t border-white/20">
               <div>
-                <p className="text-xs font-medium text-amber-200 uppercase tracking-wider">
+                <p className="text-xs font-bold text-amber-100 uppercase tracking-wider">
                   Total Presupuesto Eléctrico
                 </p>
                 <p className="text-2xl font-black mt-0.5">S/ {totalCost.toFixed(2)}</p>
               </div>
               <button
                 onClick={() => setShowWhatsAppModal(true)}
-                className="px-4 py-2 bg-white text-orange-900 text-xs font-bold rounded-xl shadow-md hover:bg-amber-50 transition-all active:scale-95 cursor-pointer shrink-0 whitespace-nowrap ml-2"
+                className="px-4 py-2 bg-white text-orange-900 text-xs font-black rounded-2xl shadow-md hover:bg-amber-50 transition-all active:scale-95 cursor-pointer shrink-0"
               >
-                Pedir a Ferretería 📲
+                Pedir WhatsApp 📲
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: New Electrical Project (With Independent vs Linked choice) */}
+      <Modal
+        isOpen={showNewProjectModal}
+        onClose={() => setShowNewProjectModal(false)}
+        title="⚡ Nuevo Presupuesto Eléctrico Monofásico"
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-slate-600">
+            Puedes cotizar este trabajo de electricidad como una obra 100% independiente, o asociarlo a un proyecto de drywall existente.
+          </p>
+
+          <Input
+            label="Nombre del Proyecto / Trabajo Eléctrico"
+            placeholder="Ej: Cableado y Tomacorrientes Dpto 402"
+            value={newProjectName}
+            onChange={(e) => setNewProjectName(e.target.value)}
+          />
+
+          <Input
+            label="Cliente / Contacto"
+            placeholder="Nombre del cliente o departamento"
+            value={newClientName}
+            onChange={(e) => setNewClientName(e.target.value)}
+          />
+
+          {/* Choice: Independent vs Linked */}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-bold text-slate-700">Modalidad de Proyecto</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setLinkMode('independent')}
+                className={`p-3 rounded-2xl border text-left text-xs transition-all cursor-pointer ${
+                  linkMode === 'independent'
+                    ? 'border-amber-500 bg-amber-50/80 text-amber-950 font-black shadow-xs'
+                    : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                }`}
+              >
+                <span className="text-lg block">⚡</span>
+                <p className="font-bold mt-1">100% Independiente</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">Trabajo solo de electricidad</p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setLinkMode('linked')}
+                className={`p-3 rounded-2xl border text-left text-xs transition-all cursor-pointer ${
+                  linkMode === 'linked'
+                    ? 'border-purple-500 bg-purple-50/80 text-purple-950 font-black shadow-xs'
+                    : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                }`}
+              >
+                <span className="text-lg block">🔗</span>
+                <p className="font-bold mt-1">Vincular a Drywall</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">Es parte de una obra de drywall</p>
               </button>
             </div>
           </div>
 
-          {/* Consolidated Summary Preview */}
-          {currentProject.totalCost > 0 && (
-            <div className="p-3 bg-slate-100 rounded-2xl border border-slate-200 flex items-center justify-between text-xs">
-              <div>
-                <p className="font-bold text-slate-800">Presupuesto General Combinado:</p>
-                <p className="text-[11px] text-slate-500">
-                  Drywall (S/ {currentProject.totalCost.toFixed(2)}) + Eléctrica (S/ {totalCost.toFixed(2)})
-                </p>
-              </div>
-              <span className="text-sm font-black text-blue-900">
-                S/ {(currentProject.totalCost + totalCost).toFixed(2)}
-              </span>
+          {linkMode === 'linked' && (
+            <div className="space-y-1">
+              <label className="block text-xs font-bold text-slate-700">
+                Seleccionar Proyecto de Drywall Existente
+              </label>
+              <select
+                value={selectedDrywallId}
+                onChange={(e) => setSelectedDrywallId(e.target.value)}
+                className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500"
+              >
+                <option value="">-- Seleccionar proyecto --</option>
+                {projects
+                  .filter((p) => p.projectType !== 'electrico')
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.client || 'Sin cliente'})
+                    </option>
+                  ))}
+              </select>
             </div>
           )}
-        </div>
-      )}
 
-      {/* Modal: Add Electrical Point */}
+          <Button
+            fullWidth
+            onClick={handleCreateElectricalProject}
+            className="py-3 bg-amber-600 hover:bg-amber-700 font-bold"
+          >
+            Iniciar Presupuesto Eléctrico 🚀
+          </Button>
+        </div>
+      </Modal>
+
+      {/* Modal: Switch Electrical Project */}
       <Modal
-        isOpen={showAddModal}
-        onClose={() => setShowAddModal(false)}
+        isOpen={showSwitchProjectModal}
+        onClose={() => setShowSwitchProjectModal(false)}
+        title="🔄 Seleccionar Obra Eléctrica"
+      >
+        <div className="space-y-3">
+          <p className="text-xs text-slate-600">Elige qué obra deseas abrir en el módulo eléctrico:</p>
+
+          <div className="space-y-2 max-h-64 overflow-y-auto">
+            {projects.map((p) => {
+              const isCurr = p.id === activeProject?.id;
+              const isElecOnly = p.projectType === 'electrico';
+              const pItems = p.electricalItems?.length || 0;
+
+              return (
+                <div
+                  key={p.id}
+                  onClick={() => {
+                    setCurrentElectricalProject(p.id);
+                    setShowSwitchProjectModal(false);
+                  }}
+                  className={`p-3 rounded-2xl border text-xs cursor-pointer flex items-center justify-between transition-all ${
+                    isCurr
+                      ? 'border-amber-500 bg-amber-50/70 font-bold text-amber-950 shadow-xs'
+                      : 'border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  <div>
+                    <p className="font-bold text-slate-900">{p.name}</p>
+                    <p className="text-[10px] text-slate-400">
+                      {isElecOnly ? '⚡ Proyecto Eléctrico Independiente' : `🧱 Drywall · ${pItems} puntos`}
+                    </p>
+                  </div>
+                  <span className="text-xs font-black text-amber-800">
+                    S/ {(p.electricalTotalCost || 0).toFixed(2)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          <Button
+            fullWidth
+            variant="secondary"
+            onClick={() => {
+              setShowSwitchProjectModal(false);
+              setShowNewProjectModal(true);
+            }}
+          >
+            + Crear Nueva Obra Eléctrica
+          </Button>
+        </div>
+      </Modal>
+
+      {/* Modal: Add Point */}
+      <Modal
+        isOpen={showAddPointModal}
+        onClose={() => setShowAddPointModal(false)}
         title="⚡ Agregar Punto Eléctrico Monofásico"
       >
         <div className="space-y-4">
           <div className="space-y-1">
-            <label className="block text-xs font-bold text-slate-700">Tipo de Instalación Monofásica</label>
+            <label className="block text-xs font-bold text-slate-700">Tipo de Instalación 220V</label>
             <div className="grid grid-cols-2 gap-2">
               {(Object.keys(ELECTRICAL_POINT_CONFIGS) as ElectricalPointType[]).map((pKey) => {
                 const conf = ELECTRICAL_POINT_CONFIGS[pKey];
@@ -597,8 +759,8 @@ export default function ElectricalPage() {
               onChange={(e) => setPointQuantity(e.target.value)}
             />
             <Input
-              label="Ubicación / Sector"
-              placeholder="Ej: Sala, Cocina, Pasadizo"
+              label="Ubicación / Ambiente"
+              placeholder="Ej: Sala, Cocina, Baño"
               value={pointLocation}
               onChange={(e) => setPointLocation(e.target.value)}
             />
@@ -606,12 +768,12 @@ export default function ElectricalPage() {
 
           <Input
             label="Notas adicionales (opcional)"
-            placeholder="Ej: A 1.10m de altura, conmutado con cabecera"
+            placeholder="Ej: Conmutado con escalera, altura 1.10m"
             value={pointNotes}
             onChange={(e) => setPointNotes(e.target.value)}
           />
 
-          <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl text-xs space-y-1">
+          <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-2xl text-xs space-y-1">
             <p className="font-bold text-amber-900 flex items-center gap-1.5">
               <span>ℹ️</span> {ELECTRICAL_POINT_CONFIGS[selectedType].name}
             </p>
@@ -624,7 +786,7 @@ export default function ElectricalPage() {
         </div>
       </Modal>
 
-      {/* Modal: WhatsApp Electrical Order */}
+      {/* Modal: WhatsApp Order */}
       <Modal
         isOpen={showWhatsAppModal}
         onClose={() => setShowWhatsAppModal(false)}
@@ -632,10 +794,10 @@ export default function ElectricalPage() {
       >
         <div className="space-y-4">
           <p className="text-xs text-slate-600">
-            Lista lista para enviar al WhatsApp de tu distribuidor eléctrico o ferretería especializada:
+            Lista lista para enviar al WhatsApp de tu distribuidor eléctrico o ferretería:
           </p>
 
-          <div className="bg-slate-900 text-amber-300 p-3 rounded-xl font-mono text-[11px] whitespace-pre-wrap max-h-60 overflow-y-auto border border-slate-700 leading-relaxed shadow-inner">
+          <div className="bg-slate-900 text-amber-300 p-3 rounded-2xl font-mono text-[11px] whitespace-pre-wrap max-h-60 overflow-y-auto border border-slate-700 leading-relaxed shadow-inner">
             {whatsAppOrderText}
           </div>
 

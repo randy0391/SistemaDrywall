@@ -9,6 +9,9 @@ export type InsulationType = 'ninguno' | 'fibra_vidrio' | 'lana_roca';
 
 export type CrewSize = '1_maestro' | '1_maestro_1_ayudante' | '2_maestros_2_ayudantes';
 
+// Tipos de proyectos
+export type ProjectType = 'drywall' | 'electrico' | 'mixto';
+
 // Tipos de trabajos eléctricos exclusivamente MONOFÁSICOS (220V)
 export type ElectricalPointType =
   | 'tomacorriente_doble'
@@ -107,6 +110,8 @@ export interface Project {
   client: string;
   date: string;
   description: string;
+  projectType?: ProjectType; // 'drywall' | 'electrico' | 'mixto'
+  linkedProjectId?: string;  // ID del proyecto vinculado si se asocian
 
   // Drywall measurements & materials
   walls: WallMeasurement[];

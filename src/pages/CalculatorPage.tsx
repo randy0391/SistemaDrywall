@@ -400,15 +400,15 @@ export default function CalculatorPage() {
   return (
     <div className="py-3 space-y-4">
       {/* Switcher Drywall vs Eléctrico */}
-      <div className="flex bg-slate-200/80 p-1 rounded-xl">
-        <button className="flex-1 py-2 text-xs font-bold rounded-lg bg-white text-blue-700 shadow-sm flex items-center justify-center gap-1.5 cursor-pointer">
+      <div className="flex bg-slate-200/80 p-1 rounded-2xl shadow-inner">
+        <button className="flex-1 py-2 text-xs font-black rounded-xl bg-white text-blue-700 shadow-sm flex items-center justify-center gap-1.5 cursor-pointer border border-blue-200/50">
           <span>🧱</span> Módulo Drywall
         </button>
         <button
           onClick={() => navigate('/electrical')}
-          className="flex-1 py-2 text-xs font-bold rounded-lg text-slate-600 hover:text-amber-700 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+          className="flex-1 py-2 text-xs font-bold rounded-xl text-slate-600 hover:text-amber-700 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
         >
-          <span>⚡</span> Ir a Eléctrica
+          <span>⚡</span> Ir a Eléctrica 220V
         </button>
       </div>
 
@@ -427,7 +427,7 @@ export default function CalculatorPage() {
       </button>
 
       {/* Project Header Bar - Mobile Optimized with 3 Quick Action Buttons */}
-      <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+      <div className="bg-white p-4 rounded-3xl border border-slate-200/90 shadow-sm space-y-3">
         {/* Top: Project Info & "+ Nuevo" */}
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0 flex-1">

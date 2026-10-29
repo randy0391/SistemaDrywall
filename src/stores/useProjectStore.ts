@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type {
   Project,
+  ProjectType,
   WallMeasurement,
   CeilingMeasurement,
   ElectricalItem,
@@ -26,15 +27,25 @@ import {
 interface ProjectState {
   projects: Project[];
   currentProject: Project | null;
+  currentElectricalProjectId: string | null;
   prices: MaterialPrices;
   laborCosts: LaborCosts;
   geminiApiKey: string;
 
   // Project CRUD
-  createProject: (name: string, client: string, description: string) => Project;
+  createProject: (
+    name: string,
+    client: string,
+    description: string,
+    projectType?: ProjectType,
+    linkedProjectId?: string
+  ) => Project;
   updateProject: (id: string, updates: Partial<Project>) => void;
   deleteProject: (id: string) => void;
   setCurrentProject: (id: string | null) => void;
+  setCurrentElectricalProject: (id: string | null) => void;
+  linkProject: (sourceId: string, targetDrywallId: string) => void;
+  unlinkProject: (projectId: string) => void;
 
   // Options & Features
   togglePaintFinishing: (enabled: boolean) => void;
@@ -51,9 +62,9 @@ interface ProjectState {
   removeCeiling: (ceilingId: string) => void;
 
   // Electrical Items (Separado de Drywall)
-  addElectricalItem: (item: ElectricalItem) => void;
-  updateElectricalItem: (id: string, updates: Partial<ElectricalItem>) => void;
-  removeElectricalItem: (id: string) => void;
+  addElectricalItem: (item: ElectricalItem, targetProjectId?: string) => void;
+  updateElectricalItem: (id: string, updates: Partial<ElectricalItem>, targetProjectId?: string) => void;
+  removeElectricalItem: (id: string, targetProjectId?: string) => void;
 
   // Sketch import
   importFromSketch: (
@@ -81,16 +92,19 @@ export const useProjectStore = create<ProjectState>()(
     (set, get) => ({
       projects: [],
       currentProject: null,
+      currentElectricalProjectId: null,
       prices: DEFAULT_PRICES,
       laborCosts: DEFAULT_LABOR_COSTS,
       geminiApiKey: 'AIzaSyDAR9JEpDaeu2RlYun_u7HWDKawPaD0w2w',
 
-      createProject: (name, client, description) => {
+      createProject: (name, client, description, projectType = 'drywall', linkedProjectId) => {
         const project: Project = {
           id: generateId(),
           name,
           client,
           description,
+          projectType,
+          linkedProjectId,
           date: new Date().toISOString().split('T')[0],
           walls: [],
           ceilings: [],
@@ -112,10 +126,18 @@ export const useProjectStore = create<ProjectState>()(
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
-        set((state) => ({
-          projects: [...state.projects, project],
-          currentProject: project,
-        }));
+
+        set((state) => {
+          const nextProjects = [...state.projects, project];
+          const isElectricalOnly = projectType === 'electrico';
+          return {
+            projects: nextProjects,
+            currentProject: isElectricalOnly ? state.currentProject : project,
+            currentElectricalProjectId: isElectricalOnly ? project.id : state.currentElectricalProjectId,
+          };
+        });
+
+        get().recalculate();
         return project;
       },
 
@@ -136,6 +158,8 @@ export const useProjectStore = create<ProjectState>()(
         set((state) => ({
           projects: state.projects.filter((p) => p.id !== id),
           currentProject: state.currentProject?.id === id ? null : state.currentProject,
+          currentElectricalProjectId:
+            state.currentElectricalProjectId === id ? null : state.currentElectricalProjectId,
         }));
       },
 
@@ -143,6 +167,60 @@ export const useProjectStore = create<ProjectState>()(
         set((state) => ({
           currentProject: id ? state.projects.find((p) => p.id === id) || null : null,
         }));
+      },
+
+      setCurrentElectricalProject: (id) => {
+        set({ currentElectricalProjectId: id });
+      },
+
+      linkProject: (sourceId, targetDrywallId) => {
+        set((state) => {
+          const updated = state.projects.map((p) => {
+            if (p.id === sourceId) {
+              return {
+                ...p,
+                projectType: 'mixto' as ProjectType,
+                linkedProjectId: targetDrywallId,
+                updatedAt: new Date().toISOString(),
+              };
+            }
+            if (p.id === targetDrywallId) {
+              return {
+                ...p,
+                projectType: 'mixto' as ProjectType,
+                linkedProjectId: sourceId,
+                updatedAt: new Date().toISOString(),
+              };
+            }
+            return p;
+          });
+
+          return {
+            projects: updated,
+            currentProject:
+              state.currentProject?.id === targetDrywallId
+                ? updated.find((p) => p.id === targetDrywallId) || state.currentProject
+                : state.currentProject,
+          };
+        });
+        get().recalculate();
+      },
+
+      unlinkProject: (projectId) => {
+        set((state) => {
+          const updated = state.projects.map((p) => {
+            if (p.id === projectId || p.linkedProjectId === projectId) {
+              return {
+                ...p,
+                linkedProjectId: undefined,
+                projectType: (p.walls && p.walls.length > 0 ? 'drywall' : 'electrico') as ProjectType,
+                updatedAt: new Date().toISOString(),
+              };
+            }
+            return p;
+          });
+          return { projects: updated };
+        });
       },
 
       togglePaintFinishing: (enabled) => {
@@ -276,53 +354,95 @@ export const useProjectStore = create<ProjectState>()(
         get().recalculate();
       },
 
-      // Electrical actions
-      addElectricalItem: (item) => {
+      // Electrical actions with support for independent electrical project
+      addElectricalItem: (item, targetProjectId) => {
         set((state) => {
-          if (!state.currentProject) return state;
-          const prevItems = state.currentProject.electricalItems || [];
-          const updated: Project = {
-            ...state.currentProject,
-            electricalItems: [...prevItems, item],
-            updatedAt: new Date().toISOString(),
-          };
+          const targetId =
+            targetProjectId || state.currentElectricalProjectId || state.currentProject?.id;
+          if (!targetId) return state;
+
+          const updatedProjects = state.projects.map((p) => {
+            if (p.id === targetId) {
+              const prevItems = p.electricalItems || [];
+              return {
+                ...p,
+                electricalItems: [...prevItems, item],
+                updatedAt: new Date().toISOString(),
+              };
+            }
+            return p;
+          });
+
+          const currentProject =
+            state.currentProject?.id === targetId
+              ? updatedProjects.find((p) => p.id === targetId) || state.currentProject
+              : state.currentProject;
+
           return {
-            currentProject: updated,
-            projects: state.projects.map((p) => (p.id === updated.id ? updated : p)),
+            projects: updatedProjects,
+            currentProject,
           };
         });
         get().recalculate();
       },
 
-      updateElectricalItem: (id, updates) => {
+      updateElectricalItem: (id, updates, targetProjectId) => {
         set((state) => {
-          if (!state.currentProject) return state;
-          const prevItems = state.currentProject.electricalItems || [];
-          const updated: Project = {
-            ...state.currentProject,
-            electricalItems: prevItems.map((it) => (it.id === id ? { ...it, ...updates } : it)),
-            updatedAt: new Date().toISOString(),
-          };
+          const targetId =
+            targetProjectId || state.currentElectricalProjectId || state.currentProject?.id;
+          if (!targetId) return state;
+
+          const updatedProjects = state.projects.map((p) => {
+            if (p.id === targetId) {
+              const prevItems = p.electricalItems || [];
+              return {
+                ...p,
+                electricalItems: prevItems.map((it) => (it.id === id ? { ...it, ...updates } : it)),
+                updatedAt: new Date().toISOString(),
+              };
+            }
+            return p;
+          });
+
+          const currentProject =
+            state.currentProject?.id === targetId
+              ? updatedProjects.find((p) => p.id === targetId) || state.currentProject
+              : state.currentProject;
+
           return {
-            currentProject: updated,
-            projects: state.projects.map((p) => (p.id === updated.id ? updated : p)),
+            projects: updatedProjects,
+            currentProject,
           };
         });
         get().recalculate();
       },
 
-      removeElectricalItem: (id) => {
+      removeElectricalItem: (id, targetProjectId) => {
         set((state) => {
-          if (!state.currentProject) return state;
-          const prevItems = state.currentProject.electricalItems || [];
-          const updated: Project = {
-            ...state.currentProject,
-            electricalItems: prevItems.filter((it) => it.id !== id),
-            updatedAt: new Date().toISOString(),
-          };
+          const targetId =
+            targetProjectId || state.currentElectricalProjectId || state.currentProject?.id;
+          if (!targetId) return state;
+
+          const updatedProjects = state.projects.map((p) => {
+            if (p.id === targetId) {
+              const prevItems = p.electricalItems || [];
+              return {
+                ...p,
+                electricalItems: prevItems.filter((it) => it.id !== id),
+                updatedAt: new Date().toISOString(),
+              };
+            }
+            return p;
+          });
+
+          const currentProject =
+            state.currentProject?.id === targetId
+              ? updatedProjects.find((p) => p.id === targetId) || state.currentProject
+              : state.currentProject;
+
           return {
-            currentProject: updated,
-            projects: state.projects.map((p) => (p.id === updated.id ? updated : p)),
+            projects: updatedProjects,
+            currentProject,
           };
         });
         get().recalculate();
@@ -347,7 +467,8 @@ export const useProjectStore = create<ProjectState>()(
           const newProj = state.createProject(
             projectName || 'Proyecto desde Dibujo IA',
             'Cliente Escaneado',
-            'Detectado a partir de foto de dibujo a mano'
+            'Detectado a partir de foto de dibujo a mano',
+            'drywall'
           );
           const updated: Project = {
             ...newProj,
@@ -383,71 +504,69 @@ export const useProjectStore = create<ProjectState>()(
 
       recalculate: () => {
         const state = get();
-        if (!state.currentProject) return;
-
         const prices = state.prices;
         const labor = state.laborCosts;
-        const proj = state.currentProject;
 
-        // 1. Drywall Calculations
-        const wallMaterials = proj.walls.map((w) => calculateWallMaterials(w, prices));
-        const ceilingMaterials = proj.ceilings.map((c) => calculateCeilingMaterials(c, prices));
-        const paintMaterials = proj.includePaintFinishing
-          ? calculatePaintingMaterials(proj.walls, proj.ceilings, prices)
-          : [];
+        // Recalculate across all projects
+        const updatedProjects = state.projects.map((proj) => {
+          // Drywall calculations
+          const wallMaterials = proj.walls.map((w) => calculateWallMaterials(w, prices));
+          const ceilingMaterials = proj.ceilings.map((c) => calculateCeilingMaterials(c, prices));
+          const paintMaterials = proj.includePaintFinishing
+            ? calculatePaintingMaterials(proj.walls, proj.ceilings, prices)
+            : [];
 
-        const allMaterials = mergeMaterials([
-          ...wallMaterials,
-          ...ceilingMaterials,
-          paintMaterials,
-        ]);
-        const materialsCost = calculateTotalCost(allMaterials);
+          const allMaterials = mergeMaterials([
+            ...wallMaterials,
+            ...ceilingMaterials,
+            paintMaterials,
+          ]);
+          const materialsCost = calculateTotalCost(allMaterials);
 
-        // Drywall Labor
-        const laborResult = calculateLaborCost(
-          proj.walls,
-          proj.ceilings,
-          labor,
-          proj.includePaintFinishing
-        );
-        const laborCost = laborResult.totalLabor;
+          const laborResult = calculateLaborCost(
+            proj.walls,
+            proj.ceilings,
+            labor,
+            proj.includePaintFinishing
+          );
+          const laborCost = laborResult.totalLabor;
 
-        // Subtotal & Profit/Contingency margin for Drywall
-        const subtotal = materialsCost + laborCost;
-        const profitAmount = labor.includeLabor
-          ? (subtotal * (labor.profitMarginPercent || 0)) / 100
-          : 0;
-        const totalCost = Math.round((subtotal + profitAmount) * 100) / 100;
+          const subtotal = materialsCost + laborCost;
+          const profitAmount = labor.includeLabor
+            ? (subtotal * (labor.profitMarginPercent || 0)) / 100
+            : 0;
+          const totalCost = Math.round((subtotal + profitAmount) * 100) / 100;
 
-        // 2. Electrical Calculations (100% Separado de Drywall)
-        const electricalItems = proj.electricalItems || [];
-        const electricalMaterials = calculateElectricalMaterials(electricalItems, prices);
-        const electricalMaterialsCost = calculateTotalCost(electricalMaterials);
-        const electricalLaborResult = calculateElectricalLabor(electricalItems, labor);
-        const electricalLaborCost = electricalLaborResult.totalLabor;
-        const electricalTotalCost = Math.round((electricalMaterialsCost + electricalLaborCost) * 100) / 100;
+          // Electrical calculations (Separado)
+          const electricalItems = proj.electricalItems || [];
+          const electricalMaterials = calculateElectricalMaterials(electricalItems, prices);
+          const electricalMaterialsCost = calculateTotalCost(electricalMaterials);
+          const electricalLaborResult = calculateElectricalLabor(electricalItems, labor);
+          const electricalLaborCost = electricalLaborResult.totalLabor;
+          const electricalTotalCost = Math.round((electricalMaterialsCost + electricalLaborCost) * 100) / 100;
 
-        set((s) => {
-          const updated: Project = {
-            ...s.currentProject!,
-            // Drywall
+          return {
+            ...proj,
             materials: allMaterials,
             materialsCost: Math.round(materialsCost * 100) / 100,
             laborCost,
             profitAmount: Math.round(profitAmount * 100) / 100,
             totalCost,
-            // Electrical
             electricalMaterials,
             electricalMaterialsCost: Math.round(electricalMaterialsCost * 100) / 100,
             electricalLaborCost,
             electricalTotalCost,
             laborSettings: labor,
-            updatedAt: new Date().toISOString(),
           };
-          return {
-            currentProject: updated,
-            projects: s.projects.map((p) => (p.id === updated.id ? updated : p)),
-          };
+        });
+
+        const currentProject = state.currentProject
+          ? updatedProjects.find((p) => p.id === state.currentProject?.id) || null
+          : null;
+
+        set({
+          projects: updatedProjects,
+          currentProject,
         });
       },
     }),
