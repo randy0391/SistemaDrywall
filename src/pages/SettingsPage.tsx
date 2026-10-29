@@ -5,21 +5,49 @@ import Input from '../components/ui/Input';
 import Button from '../components/ui/Button';
 import { DEFAULT_PRICES, DEFAULT_LABOR_COSTS } from '../utils/constants';
 
-const priceFields = [
-  { key: 'planchaDrywall12mm', label: 'Plancha Drywall 1/2" (12.7mm)' },
-  { key: 'planchaDrywall15mm', label: 'Plancha Drywall 5/8" (15mm)' },
-  { key: 'paranteMetalico89mm', label: 'Parante Metálico 89mm' },
-  { key: 'rielMetalico89mm', label: 'Riel Metálico 89mm' },
-  { key: 'paranteMetalico64mm', label: 'Parante Metálico 64mm' },
-  { key: 'rielMetalico64mm', label: 'Riel Metálico 64mm' },
-  { key: 'tornilloDrywall1inch', label: 'Tornillo Drywall 1"' },
-  { key: 'tornilloWafer', label: 'Tornillo Wafer' },
-  { key: 'cintaPapel', label: 'Cinta para Juntas (rollo)' },
-  { key: 'cintaMalla', label: 'Cinta Malla (rollo)' },
+const sheetPriceFields = [
+  { key: 'planchaDrywall12mm', label: 'Plancha Drywall ST Standard 1/2" (12.7mm)' },
+  { key: 'planchaDrywall15mm', label: 'Plancha Drywall ST Standard 5/8" (15mm)' },
+  { key: 'planchaDrywallRH', label: 'Plancha Drywall RH Verde (Antihumedad)' },
+  { key: 'planchaDrywallRF', label: 'Plancha Drywall RF Rosada (Cortafuego)' },
+  { key: 'planchaSuperboard6mm', label: 'Placa Fibrocemento Superboard 6mm (Exterior)' },
+] as const;
+
+const insulationPriceFields = [
+  { key: 'lanaFibraVidrio50mm', label: 'Lana de Vidrio 50mm con Foil (rollo 14.4m²)' },
+  { key: 'lanaRocaPaquete', label: 'Lana de Roca Acústica Alta Densidad (paquete 7.2m²)' },
+] as const;
+
+const structurePriceFields = [
+  { key: 'paranteMetalico89mm', label: 'Parante Metálico 89mm × 3.05m' },
+  { key: 'rielMetalico89mm', label: 'Riel Metálico 89mm × 3.05m' },
+  { key: 'paranteMetalico64mm', label: 'Parante / Omega Metálico 64mm × 3.05m' },
+  { key: 'rielMetalico64mm', label: 'Riel Metálico 64mm × 3.05m' },
+] as const;
+
+const fastenerPriceFields = [
+  { key: 'tornilloDrywall1inch', label: 'Tornillo Drywall 1" (unidad)' },
+  { key: 'tornilloWafer', label: 'Tornillo Wafer (unidad)' },
+  { key: 'fulminante', label: 'Fulminante de fijación (unidad)' },
+  { key: 'clavo', label: 'Clavo de impacto (unidad)' },
+] as const;
+
+const finishingPriceFields = [
+  { key: 'cintaPapel', label: 'Cinta para Juntas de Papel (rollo 75m)' },
+  { key: 'cintaMalla', label: 'Cinta Malla Autoadhesiva (rollo 90m)' },
   { key: 'masilla', label: 'Masilla para Juntas (bolsa 28kg)' },
-  { key: 'esquinero', label: 'Esquinero Metálico' },
-  { key: 'fulminante', label: 'Fulminante' },
-  { key: 'clavo', label: 'Clavo' },
+  { key: 'esquinero', label: 'Esquinero Metálico 2.44m' },
+] as const;
+
+const lightingPriceFields = [
+  { key: 'perfilLedAluminio', label: 'Perfil de Aluminio LED + Difusor (2m)' },
+  { key: 'tiraLedMetro', label: 'Tira LED Continua de Alta Densidad (por metro)' },
+] as const;
+
+const paintPriceFields = [
+  { key: 'selladorDrywallGalon', label: 'Sellador / Imprimante para Drywall (galón)' },
+  { key: 'pinturaLatexGalon', label: 'Pintura Látex Lavable Mate (galón)' },
+  { key: 'lijaAguaPliego', label: 'Lija de Agua grano 120 / 180 (pliego)' },
 ] as const;
 
 export default function SettingsPage() {
@@ -130,12 +158,20 @@ export default function SettingsPage() {
             onChange={(e) => updateLaborCosts({ costPerSqmCieloRaso: parseFloat(e.target.value) || 0 })}
           />
           <Input
-            label="Acabado, cinta y masillado por m²"
+            label="Acabado, cinta y masillado a 3 manos por m²"
             type="number"
             step="0.50"
             suffix="S/"
             value={laborCosts.costPerSqmAcabado}
             onChange={(e) => updateLaborCosts({ costPerSqmAcabado: parseFloat(e.target.value) || 0 })}
+          />
+          <Input
+            label="Pintura látex a 2 manos y lijado por m²"
+            type="number"
+            step="0.50"
+            suffix="S/"
+            value={laborCosts.costPerSqmPintura || 8.00}
+            onChange={(e) => updateLaborCosts({ costPerSqmPintura: parseFloat(e.target.value) || 0 })}
           />
           <Input
             label="Margen de imprevistos y utilidad predeterminado"
@@ -155,39 +191,175 @@ export default function SettingsPage() {
       </Card>
 
       {/* 💰 Precios de Materiales */}
-      <Card>
-        <h3 className="font-bold text-slate-800 mb-1 flex items-center gap-2">
-          <span>💰</span> Precios de Materiales (S/.)
-        </h3>
-        <p className="text-xs text-slate-500 mb-4">
-          Precios unitarios de compra o ferretería local.
-        </p>
-        <div className="space-y-3">
-          {priceFields.map((field) => (
-            <Input
-              key={field.key}
-              label={field.label}
-              type="number"
-              step="0.01"
-              min="0"
-              suffix="S/"
-              value={prices[field.key as keyof typeof prices]}
-              onChange={(e) => updatePrices({ [field.key]: parseFloat(e.target.value) || 0 })}
-            />
-          ))}
+      <Card className="space-y-4">
+        <div>
+          <h3 className="font-bold text-slate-800 mb-1 flex items-center gap-2">
+            <span>💰</span> Precios Unitarios de Materiales (S/.)
+          </h3>
+          <p className="text-xs text-slate-500">
+            Ajusta los precios de lista según tu ferretería local o distribuidor.
+          </p>
         </div>
-        <div className="mt-4">
+
+        {/* Planchas */}
+        <div className="space-y-2 pt-2 border-t border-slate-100">
+          <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+            <span>📦</span> Planchas de Drywall y Fibrocemento
+          </h4>
+          <div className="space-y-2.5">
+            {sheetPriceFields.map((field) => (
+              <Input
+                key={field.key}
+                label={field.label}
+                type="number"
+                step="0.50"
+                min="0"
+                suffix="S/"
+                value={prices[field.key as keyof typeof prices]}
+                onChange={(e) => updatePrices({ [field.key]: parseFloat(e.target.value) || 0 })}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Aislamientos */}
+        <div className="space-y-2 pt-2 border-t border-slate-100">
+          <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+            <span>🔇</span> Aislamiento Térmico y Acústico
+          </h4>
+          <div className="space-y-2.5">
+            {insulationPriceFields.map((field) => (
+              <Input
+                key={field.key}
+                label={field.label}
+                type="number"
+                step="1.00"
+                min="0"
+                suffix="S/"
+                value={prices[field.key as keyof typeof prices]}
+                onChange={(e) => updatePrices({ [field.key]: parseFloat(e.target.value) || 0 })}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Estructura */}
+        <div className="space-y-2 pt-2 border-t border-slate-100">
+          <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+            <span>🔩</span> Perfilería y Estructura Metálica
+          </h4>
+          <div className="space-y-2.5">
+            {structurePriceFields.map((field) => (
+              <Input
+                key={field.key}
+                label={field.label}
+                type="number"
+                step="0.20"
+                min="0"
+                suffix="S/"
+                value={prices[field.key as keyof typeof prices]}
+                onChange={(e) => updatePrices({ [field.key]: parseFloat(e.target.value) || 0 })}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Fijaciones */}
+        <div className="space-y-2 pt-2 border-t border-slate-100">
+          <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+            <span>🔧</span> Fijaciones y Tornillería
+          </h4>
+          <div className="space-y-2.5">
+            {fastenerPriceFields.map((field) => (
+              <Input
+                key={field.key}
+                label={field.label}
+                type="number"
+                step="0.01"
+                min="0"
+                suffix="S/"
+                value={prices[field.key as keyof typeof prices]}
+                onChange={(e) => updatePrices({ [field.key]: parseFloat(e.target.value) || 0 })}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Acabados */}
+        <div className="space-y-2 pt-2 border-t border-slate-100">
+          <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+            <span>🎨</span> Cintas, Masillas y Esquineros
+          </h4>
+          <div className="space-y-2.5">
+            {finishingPriceFields.map((field) => (
+              <Input
+                key={field.key}
+                label={field.label}
+                type="number"
+                step="0.50"
+                min="0"
+                suffix="S/"
+                value={prices[field.key as keyof typeof prices]}
+                onChange={(e) => updatePrices({ [field.key]: parseFloat(e.target.value) || 0 })}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Iluminación LED */}
+        <div className="space-y-2 pt-2 border-t border-slate-100">
+          <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+            <span>💡</span> Perfiles e Iluminación LED
+          </h4>
+          <div className="space-y-2.5">
+            {lightingPriceFields.map((field) => (
+              <Input
+                key={field.key}
+                label={field.label}
+                type="number"
+                step="0.50"
+                min="0"
+                suffix="S/"
+                value={prices[field.key as keyof typeof prices]}
+                onChange={(e) => updatePrices({ [field.key]: parseFloat(e.target.value) || 0 })}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Pintura y Sellador */}
+        <div className="space-y-2 pt-2 border-t border-slate-100">
+          <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+            <span>🖌️</span> Pintura, Sellador y Lijas
+          </h4>
+          <div className="space-y-2.5">
+            {paintPriceFields.map((field) => (
+              <Input
+                key={field.key}
+                label={field.label}
+                type="number"
+                step="0.50"
+                min="0"
+                suffix="S/"
+                value={prices[field.key as keyof typeof prices]}
+                onChange={(e) => updatePrices({ [field.key]: parseFloat(e.target.value) || 0 })}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="pt-3">
           <Button variant="secondary" fullWidth onClick={handleResetPrices}>
-            Restaurar Precios Predeterminados
+            Restaurar Todos los Precios a Predeterminados
           </Button>
         </div>
       </Card>
 
       <Card>
         <h3 className="font-semibold text-slate-800 mb-1">ℹ️ Acerca de</h3>
-        <p className="text-xs text-slate-600 font-semibold">DrywallCalc Pro 3D v2.0</p>
-        <p className="text-xs text-slate-500 mt-1">
-          Aplicación profesional con cálculo de materiales, mano de obra, visualización 3D interactiva y escaneo inteligente de dibujos a mano con IA.
+        <p className="text-xs text-slate-600 font-semibold">DrywallCalc Pro 3D v2.2</p>
+        <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+          Suite completa para contratistas e instaladores de drywall: cálculo automatizado de materiales, placas especiales (RH, RF, Superboard), aislamiento acústico, iluminación LED arquitectónica, pedidos instantáneos por WhatsApp, estimación de cronogramas y visualización 3D interactiva.
         </p>
       </Card>
     </div>

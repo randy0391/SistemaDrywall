@@ -9,8 +9,22 @@ import CostChart from '../components/charts/CostChart';
 import MaterialBarChart from '../components/charts/MaterialBarChart';
 import SketchScannerModal from '../components/scanner/SketchScannerModal';
 import ShareProjectModal from '../components/projects/ShareProjectModal';
-import type { WallMeasurement, CeilingMeasurement, Opening, ConstructionType } from '../types';
-import { CONSTRUCTION_TYPES } from '../utils/constants';
+import WhatsAppOrderModal from '../components/projects/WhatsAppOrderModal';
+import CloudSyncModal from '../components/projects/CloudSyncModal';
+import WorkScheduleCard from '../components/calculator/WorkScheduleCard';
+import type {
+  WallMeasurement,
+  CeilingMeasurement,
+  Opening,
+  ConstructionType,
+  BoardType,
+  InsulationType,
+} from '../types';
+import {
+  CONSTRUCTION_TYPES,
+  BOARD_TYPES,
+  INSULATION_TYPES,
+} from '../utils/constants';
 import jsPDF from 'jspdf';
 import confetti from 'canvas-confetti';
 
@@ -29,6 +43,8 @@ export default function CalculatorPage() {
     removeCeiling,
     laborCosts,
     updateLaborCosts,
+    togglePaintFinishing,
+    setCrewSize,
   } = useProjectStore();
 
   const [activeTab, setActiveTab] = useState<'tabiques' | 'cieloraso'>('tabiques');
@@ -37,6 +53,8 @@ export default function CalculatorPage() {
   const [showAddCeiling, setShowAddCeiling] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
+  const [showCloudSyncModal, setShowCloudSyncModal] = useState(false);
 
   // New project form
   const [projectName, setProjectName] = useState('');
@@ -49,6 +67,9 @@ export default function CalculatorPage() {
   const [wallHeight, setWallHeight] = useState('2.40');
   const [wallType, setWallType] = useState<ConstructionType>('tabique');
   const [wallDoubleSide, setWallDoubleSide] = useState(true);
+  const [wallBoardType, setWallBoardType] = useState<BoardType>('ST');
+  const [wallInsulation, setWallInsulation] = useState<InsulationType>('ninguno');
+  const [wallLightNiche, setWallLightNiche] = useState(false);
   const [openings, setOpenings] = useState<Opening[]>([]);
 
   // Ceiling form
@@ -56,6 +77,9 @@ export default function CalculatorPage() {
   const [ceilingWidth, setCeilingWidth] = useState('');
   const [ceilingLength, setCeilingLength] = useState('');
   const [ceilingDrop, setCeilingDrop] = useState('0.10');
+  const [ceilingBoardType, setCeilingBoardType] = useState<BoardType>('ST');
+  const [ceilingInsulation, setCeilingInsulation] = useState<InsulationType>('ninguno');
+  const [ceilingLedCove, setCeilingLedCove] = useState(false);
 
   const handleCreateProject = () => {
     if (!projectName.trim()) return;
@@ -72,6 +96,9 @@ export default function CalculatorPage() {
       height: parseFloat(wallHeight),
       type: wallType,
       hasDoubleSide: wallDoubleSide,
+      boardType: wallBoardType,
+      insulation: wallInsulation,
+      hasLightNiche: wallLightNiche,
       openings,
     };
     addWall(wall);
@@ -79,6 +106,9 @@ export default function CalculatorPage() {
     setWallWidth('');
     setWallHeight('2.40');
     setWallType('tabique');
+    setWallBoardType('ST');
+    setWallInsulation('ninguno');
+    setWallLightNiche(false);
     setOpenings([]);
     setShowAddWall(false);
   };
@@ -107,12 +137,18 @@ export default function CalculatorPage() {
       width: parseFloat(ceilingWidth),
       length: parseFloat(ceilingLength),
       dropHeight: parseFloat(ceilingDrop),
+      boardType: ceilingBoardType,
+      insulation: ceilingInsulation,
+      hasLedCove: ceilingLedCove,
     };
     addCeiling(ceiling);
     setCeilingName('');
     setCeilingWidth('');
     setCeilingLength('');
     setCeilingDrop('0.10');
+    setCeilingBoardType('ST');
+    setCeilingInsulation('ninguno');
+    setCeilingLedCove(false);
     setShowAddCeiling(false);
   };
 
@@ -135,83 +171,91 @@ export default function CalculatorPage() {
       doc.setFillColor(37, 99, 235);
       doc.rect(0, 0, 210, 28, 'F');
       doc.setTextColor(255, 255, 255);
-      doc.setFontSize(18);
+      doc.setFontSize(16);
       doc.setFont('helvetica', 'bold');
-      doc.text('COTIZACIÓN DE MATERIALES Y MANO DE OBRA', margin, 18);
+      doc.text('COTIZACIÓN Y METRADO TÉCNICO DRYWALL', margin, 18);
 
       // Project Info
       y = 38;
       doc.setTextColor(30, 41, 59);
-      doc.setFontSize(12);
+      doc.setFontSize(11);
       doc.setFont('helvetica', 'bold');
       doc.text(`Proyecto: ${currentProject.name}`, margin, y);
       y += 6;
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10);
+      doc.setFontSize(9);
       doc.text(`Cliente: ${currentProject.client || 'Particular'}`, margin, y);
       doc.text(`Fecha: ${new Date().toLocaleDateString('es-PE')}`, 140, y);
-      y += 6;
+      y += 5;
       doc.text(`Estado: ${currentProject.status.toUpperCase()}`, margin, y);
+      if (currentProject.includePaintFinishing) {
+        doc.text('Incluye: Acabado completo de pintura y sellado', 110, y);
+      }
 
       // Section: Measurements summary
       y += 10;
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.text('1. RESUMEN DE MEDIDAS INGRESADAS', margin, y);
+      doc.setFontSize(10);
+      doc.text('1. RESUMEN DE ELEMENTOS Y METRADOS', margin, y);
       y += 6;
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9);
 
-      currentProject.walls.forEach((w) => {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.5);
+
+      currentProject.walls.forEach((w, i) => {
+        const gross = w.width * w.height;
+        const bLabel = BOARD_TYPES[w.boardType || 'ST'].label;
+        const insul = w.insulation && w.insulation !== 'ninguno' ? ` · Aislamiento: ${w.insulation}` : '';
         doc.text(
-          `• ${w.name}: ${w.width}m largo × ${w.height}m alto (${(w.width * w.height).toFixed(2)} m²) - ${w.hasDoubleSide ? 'Doble cara' : 'Una cara'} - ${w.openings.length} aberturas`,
-          margin + 4,
+          `• Tabique ${i + 1} (${w.name}): ${w.width}m × ${w.height}m (${gross.toFixed(2)} m²) · ${bLabel}${insul}`,
+          margin + 2,
           y
         );
         y += 5;
       });
 
-      currentProject.ceilings.forEach((c) => {
+      currentProject.ceilings.forEach((c, i) => {
+        const area = c.width * c.length;
+        const cove = c.hasLedCove ? ' · con Garganta LED' : '';
         doc.text(
-          `• Cielo Raso: ${c.name} - ${c.width}m × ${c.length}m (${(c.width * c.length).toFixed(2)} m²) - Descuelgue: ${c.dropHeight}m`,
-          margin + 4,
+          `• Cielo Raso ${i + 1} (${c.name}): ${c.width}m × ${c.length}m (${area.toFixed(2)} m²)${cove}`,
+          margin + 2,
           y
         );
         y += 5;
       });
 
       // Section: Materials Table
-      y += 8;
+      y += 6;
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.text('2. LISTA DETALLADA DE MATERIALES', margin, y);
+      doc.setFontSize(10);
+      doc.text('2. LISTA DETALLADA DE MATERIALES A DESPACHAR', margin, y);
       y += 6;
 
       // Table Header
       doc.setFillColor(241, 245, 249);
-      doc.rect(margin, y, 182, 7, 'F');
-      doc.setFontSize(9);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(51, 65, 85);
-      doc.text('Descripción del Material', margin + 2, y + 5);
-      doc.text('Cant.', 120, y + 5);
-      doc.text('P. Unit', 145, y + 5);
-      doc.text('Total (S/)', 170, y + 5);
-      y += 8;
+      doc.rect(margin, y - 4, 182, 7, 'F');
+      doc.setFontSize(8.5);
+      doc.text('Descripción del Material', margin + 2, y);
+      doc.text('Cant.', 120, y);
+      doc.text('P. Unit.', 145, y);
+      doc.text('Subtotal', 170, y);
+      y += 7;
 
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(30, 41, 59);
 
       currentProject.materials.forEach((mat) => {
-        if (y > 255) {
+        if (y > 260) {
           doc.addPage();
           y = 20;
         }
-        doc.text(mat.name, margin + 2, y);
+        const nameTruncated = mat.name.length > 50 ? mat.name.substring(0, 47) + '...' : mat.name;
+        doc.text(nameTruncated, margin + 2, y);
         doc.text(`${mat.quantity} ${mat.unit}`, 120, y);
         doc.text(`S/ ${mat.unitPrice.toFixed(2)}`, 145, y);
         doc.text(`S/ ${mat.totalPrice.toFixed(2)}`, 170, y);
-        y += 6;
+        y += 5.5;
       });
 
       // Subtotal Materiales
@@ -221,23 +265,23 @@ export default function CalculatorPage() {
 
       // Section: Mano de Obra
       if (laborCosts.includeLabor && currentProject.laborCost > 0) {
-        y += 10;
+        y += 8;
         if (y > 255) {
           doc.addPage();
           y = 20;
         }
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(11);
-        doc.text('3. MANO DE OBRA Y SERVICIOS', margin, y);
+        doc.setFontSize(10);
+        doc.text('3. MANO DE OBRA Y SERVICIOS PROFESIONALES', margin, y);
         y += 6;
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(9);
-        doc.text(`• Instalación de tabiquería y techos + Masillado y acabado`, margin + 4, y);
+        doc.setFontSize(8.5);
+        doc.text(`• Estructura metálica, emplacado y masillado a 3 manos`, margin + 4, y);
         doc.setFont('helvetica', 'bold');
         doc.text(`S/ ${currentProject.laborCost.toFixed(2)}`, 170, y);
 
         if (currentProject.profitAmount > 0) {
-          y += 6;
+          y += 5;
           doc.setFont('helvetica', 'normal');
           doc.text(`• Margen de imprevistos y utilidad (${laborCosts.profitMarginPercent}%):`, margin + 4, y);
           doc.setFont('helvetica', 'bold');
@@ -246,19 +290,19 @@ export default function CalculatorPage() {
       }
 
       // Grand Total Box
-      y += 10;
-      if (y > 260) {
+      y += 8;
+      if (y > 255) {
         doc.addPage();
         y = 20;
       }
       doc.setDrawColor(37, 99, 235);
       doc.setFillColor(239, 246, 255);
-      doc.rect(100, y, 96, 14, 'FD');
+      doc.rect(95, y, 101, 14, 'FD');
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(12);
+      doc.setFontSize(11);
       doc.setTextColor(29, 78, 216);
-      doc.text('TOTAL COTIZACIÓN:', 104, y + 9);
-      doc.text(`S/ ${currentProject.totalCost.toFixed(2)}`, 155, y + 9);
+      doc.text('TOTAL COTIZACIÓN:', 98, y + 9);
+      doc.text(`S/ ${currentProject.totalCost.toFixed(2)}`, 150, y + 9);
 
       // Save PDF
       doc.save(`Cotizacion_Drywall_${currentProject.name.replace(/\s+/g, '_')}.pdf`);
@@ -277,15 +321,21 @@ export default function CalculatorPage() {
   const categoryIcons: Record<string, string> = {
     estructura: '🔩',
     plancha: '📦',
+    aislamiento: '🔇',
     acabado: '🎨',
     fijacion: '🔧',
+    iluminacion: '💡',
+    pintura: '🖌️',
   };
 
   const categoryLabels: Record<string, string> = {
     estructura: 'Estructura Metálica',
-    plancha: 'Planchas de Yeso / Drywall',
+    plancha: 'Planchas de Drywall / Yeso',
+    aislamiento: 'Aislamiento Termoacústico',
     acabado: 'Cintas, Masillas y Esquineros',
     fijacion: 'Tornillos y Fulminantes',
+    iluminacion: 'Perfiles e Iluminación LED',
+    pintura: 'Pintura, Sellador y Lijas',
   };
 
   if (showNewProject || !currentProject) {
@@ -299,7 +349,7 @@ export default function CalculatorPage() {
           <div className="flex items-center gap-3 text-left">
             <span className="text-3xl">📸</span>
             <div>
-              <p className="font-extrabold text-sm sm:text-base">¿Tienes un dibujo a mano?</p>
+              <p className="font-extrabold text-sm sm:text-base">¿Tienes un croquis o dibujo a mano?</p>
               <p className="text-xs text-violet-200">Tómale foto para detectar medidas con IA</p>
             </div>
           </div>
@@ -329,7 +379,7 @@ export default function CalculatorPage() {
           />
           <Input
             label="Descripción o Notas"
-            placeholder="Ej: Tabique acústico con lana de vidrio"
+            placeholder="Ej: Tabique acústico con lana de vidrio y cielo con luz LED"
             value={projectDesc}
             onChange={(e) => setProjectDesc(e.target.value)}
           />
@@ -363,7 +413,7 @@ export default function CalculatorPage() {
         </span>
       </button>
 
-      {/* Project Header Bar - Mobile Optimized */}
+      {/* Project Header Bar - Mobile Optimized with 3 Quick Action Buttons */}
       <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
         {/* Top: Project Info & "+ Nuevo" */}
         <div className="flex items-center justify-between gap-2">
@@ -389,20 +439,27 @@ export default function CalculatorPage() {
           </button>
         </div>
 
-        {/* Action Buttons: 2 Equal Columns for Mobile Screens */}
-        <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
+        {/* Action Buttons: 3 Columns for Mobile & Tablet */}
+        <div className="grid grid-cols-3 gap-1.5 pt-2 border-t border-slate-100">
           <button
             onClick={() => setShowShareModal(true)}
             title="Pasar este proyecto al celular"
-            className="py-2 px-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl border border-blue-200 text-xs font-bold flex items-center justify-center gap-1.5 active:scale-95 transition-transform cursor-pointer whitespace-nowrap"
+            className="py-2 px-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl border border-blue-200 text-[11px] font-bold flex items-center justify-center gap-1 active:scale-95 transition-transform cursor-pointer whitespace-nowrap"
           >
-            <span className="text-sm">📲</span> Pasar a Celular
+            <span>📲</span> QR Celular
+          </button>
+          <button
+            onClick={() => setShowCloudSyncModal(true)}
+            title="Sincronizar en la Nube con código"
+            className="py-2 px-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl border border-indigo-200 text-[11px] font-bold flex items-center justify-center gap-1 active:scale-95 transition-transform cursor-pointer whitespace-nowrap"
+          >
+            <span>☁️</span> Nube Sync
           </button>
           <button
             onClick={() => navigate('/viewer3d')}
-            className="py-2 px-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl shadow-xs text-xs font-bold flex items-center justify-center gap-1.5 active:scale-95 transition-transform cursor-pointer whitespace-nowrap"
+            className="py-2 px-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl shadow-xs text-[11px] font-bold flex items-center justify-center gap-1 active:scale-95 transition-transform cursor-pointer whitespace-nowrap"
           >
-            <span className="text-sm">🎨</span> Ver en 3D
+            <span>🎨</span> Ver en 3D
           </button>
         </div>
       </div>
@@ -443,39 +500,55 @@ export default function CalculatorPage() {
               </p>
             </div>
           ) : (
-            currentProject.walls.map((wall, index) => (
-              <Card key={wall.id} className="relative overflow-hidden border-l-4 border-l-blue-600">
-                <div className="flex items-start justify-between">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-slate-400">#{index + 1}</span>
-                      <h4 className="font-bold text-slate-900 text-sm">{wall.name}</h4>
-                    </div>
-                    <div className="flex items-center gap-3 text-xs text-slate-600">
-                      <span className="font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">
-                        {wall.width}m (largo) × {wall.height}m (alto)
-                      </span>
-                      <span>= {(wall.width * wall.height).toFixed(2)} m²</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-[11px] text-slate-500">
-                      <span>{wall.hasDoubleSide ? '✅ Doble cara' : '☑️ Una cara'}</span>
-                      {wall.openings.length > 0 && (
-                        <span className="bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded font-medium">
-                          {wall.openings.length} abertura(s)
+            currentProject.walls.map((wall, index) => {
+              const bInfo = BOARD_TYPES[wall.boardType || 'ST'];
+              return (
+                <Card key={wall.id} className="relative overflow-hidden border-l-4 border-l-blue-600">
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-bold text-slate-400">#{index + 1}</span>
+                        <h4 className="font-bold text-slate-900 text-sm">{wall.name}</h4>
+                        <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${bInfo.badge}`}>
+                          {bInfo.label}
                         </span>
-                      )}
+                      </div>
+                      <div className="flex items-center gap-3 text-xs text-slate-600">
+                        <span className="font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">
+                          {wall.width}m (largo) × {wall.height}m (alto)
+                        </span>
+                        <span>= {(wall.width * wall.height).toFixed(2)} m²</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-[11px] text-slate-500 flex-wrap">
+                        <span>{wall.hasDoubleSide ? '✅ Doble cara' : '☑️ Una cara'}</span>
+                        {wall.insulation && wall.insulation !== 'ninguno' && (
+                          <span className="bg-yellow-50 text-yellow-800 border border-yellow-200 px-1.5 py-0.5 rounded font-medium">
+                            {INSULATION_TYPES[wall.insulation].label}
+                          </span>
+                        )}
+                        {wall.hasLightNiche && (
+                          <span className="bg-sky-50 text-sky-800 border border-sky-200 px-1.5 py-0.5 rounded font-medium">
+                            💡 Nicho con Luz LED
+                          </span>
+                        )}
+                        {wall.openings.length > 0 && (
+                          <span className="bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded font-medium">
+                            {wall.openings.length} abertura(s)
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </div>
 
-                  <button
-                    onClick={() => removeWall(wall.id)}
-                    className="p-2 text-slate-400 hover:text-red-500 transition-colors cursor-pointer"
-                  >
-                    🗑️
-                  </button>
-                </div>
-              </Card>
-            ))
+                    <button
+                      onClick={() => removeWall(wall.id)}
+                      className="p-2 text-slate-400 hover:text-red-500 transition-colors cursor-pointer"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                </Card>
+              );
+            })
           )}
 
           <Button
@@ -500,32 +573,50 @@ export default function CalculatorPage() {
               </p>
             </div>
           ) : (
-            currentProject.ceilings.map((ceiling, index) => (
-              <Card key={ceiling.id} className="relative overflow-hidden border-l-4 border-l-indigo-600">
-                <div className="flex items-start justify-between">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-slate-400">#{index + 1}</span>
-                      <h4 className="font-bold text-slate-900 text-sm">{ceiling.name}</h4>
+            currentProject.ceilings.map((ceiling, index) => {
+              const bInfo = BOARD_TYPES[ceiling.boardType || 'ST'];
+              return (
+                <Card key={ceiling.id} className="relative overflow-hidden border-l-4 border-l-indigo-600">
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-bold text-slate-400">#{index + 1}</span>
+                        <h4 className="font-bold text-slate-900 text-sm">{ceiling.name}</h4>
+                        <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${bInfo.badge}`}>
+                          {bInfo.label}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 text-xs text-slate-600">
+                        <span className="font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">
+                          {ceiling.width}m × {ceiling.length}m
+                        </span>
+                        <span>= {(ceiling.width * ceiling.length).toFixed(2)} m²</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-[11px] text-slate-500 flex-wrap">
+                        <span>Descuelgue: {ceiling.dropHeight}m</span>
+                        {ceiling.insulation && ceiling.insulation !== 'ninguno' && (
+                          <span className="bg-yellow-50 text-yellow-800 border border-yellow-200 px-1.5 py-0.5 rounded font-medium">
+                            {INSULATION_TYPES[ceiling.insulation].label}
+                          </span>
+                        )}
+                        {ceiling.hasLedCove && (
+                          <span className="bg-cyan-50 text-cyan-800 border border-cyan-200 px-1.5 py-0.5 rounded font-bold">
+                            💡 Garganta Luz LED
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3 text-xs text-slate-600">
-                      <span className="font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">
-                        {ceiling.width}m × {ceiling.length}m
-                      </span>
-                      <span>= {(ceiling.width * ceiling.length).toFixed(2)} m²</span>
-                    </div>
-                    <p className="text-[11px] text-slate-500">Descuelgue: {ceiling.dropHeight}m</p>
-                  </div>
 
-                  <button
-                    onClick={() => removeCeiling(ceiling.id)}
-                    className="p-2 text-slate-400 hover:text-red-500 transition-colors cursor-pointer"
-                  >
-                    🗑️
-                  </button>
-                </div>
-              </Card>
-            ))
+                    <button
+                      onClick={() => removeCeiling(ceiling.id)}
+                      className="p-2 text-slate-400 hover:text-red-500 transition-colors cursor-pointer"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                </Card>
+              );
+            })
           )}
 
           <Button
@@ -541,8 +632,8 @@ export default function CalculatorPage() {
       {/* Calculated Materials Section */}
       {currentProject.materials.length > 0 && (
         <div className="space-y-4 pt-2">
-          {/* Section title & PDF Export */}
-          <div className="flex items-center justify-between">
+          {/* Action Row: Pedido WhatsApp + Exportar PDF */}
+          <div className="flex items-center justify-between gap-2">
             <div>
               <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
                 <span>📋</span> Materiales Necesarios
@@ -550,16 +641,26 @@ export default function CalculatorPage() {
               <p className="text-[11px] text-slate-500">Cantidades con 10% de desperdicio técnico</p>
             </div>
 
-            <button
-              onClick={exportPDF}
-              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm flex items-center gap-1.5 transition-transform active:scale-95 cursor-pointer"
-            >
-              <span>📄</span> Exportar PDF
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowWhatsAppModal(true)}
+                title="Generar pedido para ferretería por WhatsApp"
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm flex items-center gap-1.5 transition-transform active:scale-95 cursor-pointer whitespace-nowrap"
+              >
+                <span>📲</span> Pedir a Ferretería
+              </button>
+              <button
+                onClick={exportPDF}
+                title="Descargar presupuesto en PDF"
+                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-xl shadow-sm flex items-center gap-1.5 transition-transform active:scale-95 cursor-pointer whitespace-nowrap"
+              >
+                <span>📄</span> PDF
+              </button>
+            </div>
           </div>
 
           {/* Categorized Materials Cards */}
-          {(['estructura', 'plancha', 'acabado', 'fijacion'] as const).map((cat) => {
+          {(['plancha', 'aislamiento', 'estructura', 'fijacion', 'acabado', 'iluminacion', 'pintura'] as const).map((cat) => {
             const catMaterials = currentProject.materials.filter((m) => m.category === cat);
             if (catMaterials.length === 0) return null;
             const subtotal = catMaterials.reduce((acc, m) => acc + m.totalPrice, 0);
@@ -603,14 +704,37 @@ export default function CalculatorPage() {
             );
           })}
 
+          {/* 🎨 PINTURA Y ACABADO FINAL TOGGLE CARD */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">🎨</span>
+                <div>
+                  <h4 className="font-bold text-sm text-slate-900">Incluir Pintura y Acabado Final</h4>
+                  <p className="text-[11px] text-slate-500">Sellador/imprimante, pintura látex a 2 manos y lijas</p>
+                </div>
+              </div>
+
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={!!currentProject.includePaintFinishing}
+                  onChange={(e) => togglePaintFinishing(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+              </label>
+            </div>
+          </div>
+
           {/* 👷 MANO DE OBRA & PRESUPUESTO INTEGRAL CARD */}
           <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="text-xl">👷</span>
                 <div>
-                  <h4 className="font-bold text-sm text-slate-900">Mano de Obra</h4>
-                  <p className="text-[11px] text-slate-500">Instalación y acabados</p>
+                  <h4 className="font-bold text-sm text-slate-900">Mano de Obra Profesional</h4>
+                  <p className="text-[11px] text-slate-500">Instalación, estructura y acabados</p>
                 </div>
               </div>
 
@@ -630,15 +754,21 @@ export default function CalculatorPage() {
                 <div className="flex justify-between text-slate-600">
                   <span>Tabiquería (S/ {laborCosts.costPerSqmTabiqueDoble}/m²):</span>
                   <span className="font-semibold text-slate-800">
-                    S/ {currentProject.laborCost ? (currentProject.laborCost * 0.7).toFixed(2) : '0.00'}
+                    S/ {currentProject.laborCost ? (currentProject.laborCost * 0.6).toFixed(2) : '0.00'}
                   </span>
                 </div>
                 <div className="flex justify-between text-slate-600">
                   <span>Encintado y masillado (S/ {laborCosts.costPerSqmAcabado}/m²):</span>
                   <span className="font-semibold text-slate-800">
-                    S/ {currentProject.laborCost ? (currentProject.laborCost * 0.3).toFixed(2) : '0.00'}
+                    S/ {currentProject.laborCost ? (currentProject.laborCost * 0.4).toFixed(2) : '0.00'}
                   </span>
                 </div>
+                {currentProject.includePaintFinishing && (
+                  <div className="flex justify-between text-indigo-700">
+                    <span>Aplicación de pintura y lijado (S/ {laborCosts.costPerSqmPintura || 8.00}/m²):</span>
+                    <span className="font-bold">Incluido en mano de obra</span>
+                  </div>
+                )}
                 <div className="flex items-center justify-between pt-1">
                   <span className="text-slate-600 font-medium">Margen imprevistos/utilidad:</span>
                   <div className="flex items-center gap-1">
@@ -660,6 +790,12 @@ export default function CalculatorPage() {
               </div>
             )}
           </div>
+
+          {/* ⏱️ CRONOGRAMA DE OBRA CARD */}
+          <WorkScheduleCard
+            project={currentProject}
+            onCrewChange={(crew) => setCrewSize(crew)}
+          />
 
           {/* Grand Total Box */}
           <div className="bg-gradient-to-r from-blue-700 to-indigo-800 text-white p-4 rounded-2xl shadow-lg space-y-2">
@@ -732,6 +868,7 @@ export default function CalculatorPage() {
             onChange={(e) => setWallName(e.target.value)}
           />
 
+          {/* Tipo de Construcción */}
           <div className="space-y-1">
             <label className="block text-xs font-bold text-slate-700">Tipo de Construcción</label>
             <div className="grid grid-cols-2 gap-2">
@@ -747,6 +884,52 @@ export default function CalculatorPage() {
                   }`}
                 >
                   <span className="mr-1">{type.icon}</span> {type.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Tipo de Placa Especializada */}
+          <div className="space-y-1">
+            <label className="block text-xs font-bold text-slate-700">Tipo de Placa</label>
+            <div className="grid grid-cols-2 gap-2">
+              {(Object.keys(BOARD_TYPES) as BoardType[]).map((bKey) => (
+                <button
+                  key={bKey}
+                  type="button"
+                  onClick={() => setWallBoardType(bKey)}
+                  className={`p-2 rounded-xl border text-left text-xs transition-colors cursor-pointer ${
+                    wallBoardType === bKey
+                      ? 'border-blue-500 bg-blue-50 text-blue-900 font-bold'
+                      : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                  }`}
+                >
+                  <p className="font-bold">{BOARD_TYPES[bKey].label}</p>
+                  <p className="text-[10px] text-slate-400 truncate">{BOARD_TYPES[bKey].name.split('(')[1]?.replace(')', '') || ''}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Aislamiento Termoacústico */}
+          <div className="space-y-1">
+            <label className="block text-xs font-bold text-slate-700">Aislamiento Termoacústico</label>
+            <div className="grid grid-cols-3 gap-1.5">
+              {(Object.keys(INSULATION_TYPES) as InsulationType[]).map((iKey) => (
+                <button
+                  key={iKey}
+                  type="button"
+                  onClick={() => setWallInsulation(iKey)}
+                  className={`p-2 rounded-xl border text-left text-xs transition-colors cursor-pointer ${
+                    wallInsulation === iKey
+                      ? 'border-yellow-500 bg-yellow-50 text-yellow-900 font-bold'
+                      : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                  }`}
+                >
+                  <span className="block text-sm">{INSULATION_TYPES[iKey].icon}</span>
+                  <span className="font-semibold text-[11px] leading-tight block mt-0.5">
+                    {INSULATION_TYPES[iKey].label}
+                  </span>
                 </button>
               ))}
             </div>
@@ -786,6 +969,18 @@ export default function CalculatorPage() {
                 checked={wallDoubleSide}
                 onChange={(e) => setWallDoubleSide(e.target.checked)}
                 className="w-5 h-5 accent-blue-600 rounded cursor-pointer"
+              />
+            </div>
+            <div className="flex items-center justify-between pt-2 border-t border-slate-200">
+              <div>
+                <p className="text-xs font-bold text-slate-800">Nicho Decorativo / Centro TV</p>
+                <p className="text-[11px] text-slate-500">Incluye perfil y tira LED con luz decorativa</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={wallLightNiche}
+                onChange={(e) => setWallLightNiche(e.target.checked)}
+                className="w-5 h-5 accent-indigo-600 rounded cursor-pointer"
               />
             </div>
           </div>
@@ -851,6 +1046,51 @@ export default function CalculatorPage() {
             onChange={(e) => setCeilingName(e.target.value)}
           />
 
+          {/* Tipo de Placa en Techo */}
+          <div className="space-y-1">
+            <label className="block text-xs font-bold text-slate-700">Tipo de Placa</label>
+            <div className="grid grid-cols-2 gap-2">
+              {(Object.keys(BOARD_TYPES) as BoardType[]).map((bKey) => (
+                <button
+                  key={bKey}
+                  type="button"
+                  onClick={() => setCeilingBoardType(bKey)}
+                  className={`p-2 rounded-xl border text-left text-xs transition-colors cursor-pointer ${
+                    ceilingBoardType === bKey
+                      ? 'border-indigo-500 bg-indigo-50 text-indigo-900 font-bold'
+                      : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                  }`}
+                >
+                  <p className="font-bold">{BOARD_TYPES[bKey].label}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Aislamiento en Techo */}
+          <div className="space-y-1">
+            <label className="block text-xs font-bold text-slate-700">Aislamiento Termoacústico</label>
+            <div className="grid grid-cols-3 gap-1.5">
+              {(Object.keys(INSULATION_TYPES) as InsulationType[]).map((iKey) => (
+                <button
+                  key={iKey}
+                  type="button"
+                  onClick={() => setCeilingInsulation(iKey)}
+                  className={`p-2 rounded-xl border text-left text-xs transition-colors cursor-pointer ${
+                    ceilingInsulation === iKey
+                      ? 'border-yellow-500 bg-yellow-50 text-yellow-900 font-bold'
+                      : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                  }`}
+                >
+                  <span className="block text-sm">{INSULATION_TYPES[iKey].icon}</span>
+                  <span className="font-semibold text-[11px] leading-tight block mt-0.5">
+                    {INSULATION_TYPES[iKey].label}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <Input
               label="Ancho (m)"
@@ -885,6 +1125,21 @@ export default function CalculatorPage() {
             onChange={(e) => setCeilingDrop(e.target.value)}
           />
 
+          <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-slate-800">Garganta Perimetral para Luz Indirecta LED</p>
+                <p className="text-[11px] text-slate-500">Cajón perimetral con perfil de aluminio difusor y tira LED</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={ceilingLedCove}
+                onChange={(e) => setCeilingLedCove(e.target.checked)}
+                className="w-5 h-5 accent-cyan-600 rounded cursor-pointer"
+              />
+            </div>
+          </div>
+
           <Button fullWidth onClick={handleAddCeiling} className="py-3 font-bold bg-indigo-600">
             Guardar y Calcular Cielo Raso
           </Button>
@@ -897,11 +1152,25 @@ export default function CalculatorPage() {
         onClose={() => setShowScanner(false)}
       />
 
-      {/* Share to Phone Modal */}
+      {/* Share to Phone Modal (QR & Link) */}
       <ShareProjectModal
         project={currentProject}
         isOpen={showShareModal}
         onClose={() => setShowShareModal(false)}
+      />
+
+      {/* WhatsApp Hardware Order Modal */}
+      <WhatsAppOrderModal
+        project={currentProject}
+        isOpen={showWhatsAppModal}
+        onClose={() => setShowWhatsAppModal(false)}
+      />
+
+      {/* Cloud Sync Modal */}
+      <CloudSyncModal
+        project={currentProject}
+        isOpen={showCloudSyncModal}
+        onClose={() => setShowCloudSyncModal(false)}
       />
     </div>
   );

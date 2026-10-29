@@ -1,10 +1,18 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Project, WallMeasurement, CeilingMeasurement, MaterialPrices, LaborCosts } from '../types';
+import type {
+  Project,
+  WallMeasurement,
+  CeilingMeasurement,
+  MaterialPrices,
+  LaborCosts,
+  CrewSize,
+} from '../types';
 import { DEFAULT_PRICES, DEFAULT_LABOR_COSTS } from '../utils/constants';
 import {
   calculateWallMaterials,
   calculateCeilingMaterials,
+  calculatePaintingMaterials,
   mergeMaterials,
   calculateTotalCost,
   calculateLaborCost,
@@ -22,6 +30,10 @@ interface ProjectState {
   updateProject: (id: string, updates: Partial<Project>) => void;
   deleteProject: (id: string) => void;
   setCurrentProject: (id: string | null) => void;
+
+  // Options & Features
+  togglePaintFinishing: (enabled: boolean) => void;
+  setCrewSize: (crew: CrewSize) => void;
 
   // Walls
   addWall: (wall: WallMeasurement) => void;
@@ -77,6 +89,8 @@ export const useProjectStore = create<ProjectState>()(
           laborCost: 0,
           profitAmount: 0,
           totalCost: 0,
+          includePaintFinishing: false,
+          crewSize: '1_maestro_1_ayudante',
           laborSettings: get().laborCosts,
           status: 'borrador',
           createdAt: new Date().toISOString(),
@@ -115,10 +129,41 @@ export const useProjectStore = create<ProjectState>()(
         }));
       },
 
+      togglePaintFinishing: (enabled) => {
+        set((state) => {
+          if (!state.currentProject) return state;
+          const updated: Project = {
+            ...state.currentProject,
+            includePaintFinishing: enabled,
+            updatedAt: new Date().toISOString(),
+          };
+          return {
+            currentProject: updated,
+            projects: state.projects.map((p) => (p.id === updated.id ? updated : p)),
+          };
+        });
+        get().recalculate();
+      },
+
+      setCrewSize: (crew) => {
+        set((state) => {
+          if (!state.currentProject) return state;
+          const updated: Project = {
+            ...state.currentProject,
+            crewSize: crew,
+            updatedAt: new Date().toISOString(),
+          };
+          return {
+            currentProject: updated,
+            projects: state.projects.map((p) => (p.id === updated.id ? updated : p)),
+          };
+        });
+      },
+
       addWall: (wall) => {
         set((state) => {
           if (!state.currentProject) return state;
-          const updated = {
+          const updated: Project = {
             ...state.currentProject,
             walls: [...state.currentProject.walls, wall],
             updatedAt: new Date().toISOString(),
@@ -134,7 +179,7 @@ export const useProjectStore = create<ProjectState>()(
       updateWall: (wallId, updates) => {
         set((state) => {
           if (!state.currentProject) return state;
-          const updated = {
+          const updated: Project = {
             ...state.currentProject,
             walls: state.currentProject.walls.map((w) =>
               w.id === wallId ? { ...w, ...updates } : w
@@ -152,7 +197,7 @@ export const useProjectStore = create<ProjectState>()(
       removeWall: (wallId) => {
         set((state) => {
           if (!state.currentProject) return state;
-          const updated = {
+          const updated: Project = {
             ...state.currentProject,
             walls: state.currentProject.walls.filter((w) => w.id !== wallId),
             updatedAt: new Date().toISOString(),
@@ -168,7 +213,7 @@ export const useProjectStore = create<ProjectState>()(
       addCeiling: (ceiling) => {
         set((state) => {
           if (!state.currentProject) return state;
-          const updated = {
+          const updated: Project = {
             ...state.currentProject,
             ceilings: [...state.currentProject.ceilings, ceiling],
             updatedAt: new Date().toISOString(),
@@ -184,7 +229,7 @@ export const useProjectStore = create<ProjectState>()(
       updateCeiling: (ceilingId, updates) => {
         set((state) => {
           if (!state.currentProject) return state;
-          const updated = {
+          const updated: Project = {
             ...state.currentProject,
             ceilings: state.currentProject.ceilings.map((c) =>
               c.id === ceilingId ? { ...c, ...updates } : c
@@ -202,7 +247,7 @@ export const useProjectStore = create<ProjectState>()(
       removeCeiling: (ceilingId) => {
         set((state) => {
           if (!state.currentProject) return state;
-          const updated = {
+          const updated: Project = {
             ...state.currentProject,
             ceilings: state.currentProject.ceilings.filter((c) => c.id !== ceilingId),
             updatedAt: new Date().toISOString(),
@@ -274,22 +319,27 @@ export const useProjectStore = create<ProjectState>()(
 
         const prices = state.prices;
         const labor = state.laborCosts;
+        const proj = state.currentProject;
 
-        const wallMaterials = state.currentProject.walls.map((w) =>
-          calculateWallMaterials(w, prices)
-        );
-        const ceilingMaterials = state.currentProject.ceilings.map((c) =>
-          calculateCeilingMaterials(c, prices)
-        );
+        const wallMaterials = proj.walls.map((w) => calculateWallMaterials(w, prices));
+        const ceilingMaterials = proj.ceilings.map((c) => calculateCeilingMaterials(c, prices));
+        const paintMaterials = proj.includePaintFinishing
+          ? calculatePaintingMaterials(proj.walls, proj.ceilings, prices)
+          : [];
 
-        const allMaterials = mergeMaterials([...wallMaterials, ...ceilingMaterials]);
+        const allMaterials = mergeMaterials([
+          ...wallMaterials,
+          ...ceilingMaterials,
+          paintMaterials,
+        ]);
         const materialsCost = calculateTotalCost(allMaterials);
 
         // Labor calculation
         const laborResult = calculateLaborCost(
-          state.currentProject.walls,
-          state.currentProject.ceilings,
-          labor
+          proj.walls,
+          proj.ceilings,
+          labor,
+          proj.includePaintFinishing
         );
         const laborCost = laborResult.totalLabor;
 

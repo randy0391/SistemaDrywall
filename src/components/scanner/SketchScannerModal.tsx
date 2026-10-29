@@ -119,7 +119,10 @@ Reglas:
 1. Si una pared no tiene altura indicada, asume 2.40 metros.
 2. Si no especifica una o dos caras, asume doble cara (hasDoubleSide: true).
 3. Si detectas aberturas como puertas (aprox 0.90x2.10) o ventanas (aprox 1.20x1.10), agrégalas a "openings".
-4. Devuelve ESTRICTAMENTE un JSON con esta estructura exacta:
+4. Si la pared o habitación es baño/cocina, asigna boardType: "RH". Si es exterior/fachada, asigna boardType: "Superboard". Si indica cortafuego, asigna "RF". De lo contrario "ST".
+5. Si indica aislamiento o lana, asigna insulation: "fibra_vidrio".
+6. Si indica techo con luz indirecta o garganta LED, asigna hasLedCove: true.
+7. Devuelve ESTRICTAMENTE un JSON con esta estructura exacta:
 {
   "projectName": "Nombre sugerido de la habitación",
   "notes": "Observaciones detectadas en el boceto",
@@ -129,6 +132,8 @@ Reglas:
       "width": 3.5,
       "height": 2.4,
       "hasDoubleSide": true,
+      "boardType": "ST",
+      "insulation": "ninguno",
       "openings": [
         { "type": "puerta", "width": 0.9, "height": 2.1 }
       ]
@@ -139,7 +144,10 @@ Reglas:
       "name": "Techo falso",
       "width": 3.5,
       "length": 4.0,
-      "dropHeight": 0.1
+      "dropHeight": 0.1,
+      "boardType": "ST",
+      "insulation": "ninguno",
+      "hasLedCove": false
     }
   ]
 }`;
@@ -270,6 +278,10 @@ Reglas:
       alto?: number;
       hasDoubleSide?: boolean;
       dobleCara?: boolean;
+      boardType?: string;
+      tipoPlaca?: string;
+      insulation?: string;
+      aislamiento?: string;
       openings?: Array<{ type?: string; width?: number; height?: number; tipo?: string; ancho?: number; alto?: number }>;
       aberturas?: Array<{ type?: string; width?: number; height?: number; tipo?: string; ancho?: number; alto?: number }>;
     }
@@ -279,6 +291,17 @@ Reglas:
       const widthVal = Number(w.width ?? w.ancho ?? w.largo ?? 3.0);
       const heightVal = Number(w.height ?? w.alto ?? 2.4);
       const isDouble = w.hasDoubleSide !== false && w.dobleCara !== false;
+
+      let bType: 'ST' | 'RH' | 'RF' | 'Superboard' = 'ST';
+      const bStr = (w.boardType || w.tipoPlaca || '').toUpperCase();
+      if (bStr.includes('RH') || bStr.includes('VERDE')) bType = 'RH';
+      else if (bStr.includes('RF') || bStr.includes('FUEGO')) bType = 'RF';
+      else if (bStr.includes('SUPER') || bStr.includes('FIBRO')) bType = 'Superboard';
+
+      let insul: 'ninguno' | 'fibra_vidrio' | 'lana_roca' = 'ninguno';
+      const iStr = (w.insulation || w.aislamiento || '').toLowerCase();
+      if (iStr.includes('vidrio') || iStr.includes('lana')) insul = 'fibra_vidrio';
+      else if (iStr.includes('roca')) insul = 'lana_roca';
 
       const rawOps = w.openings || w.aberturas || [];
       const openings = rawOps.map((op) => {
@@ -299,6 +322,8 @@ Reglas:
         height: Math.max(heightVal, 0.5),
         type: 'tabique',
         hasDoubleSide: isDouble,
+        boardType: bType,
+        insulation: insul,
         openings,
       };
     });
@@ -312,6 +337,8 @@ Reglas:
       largo?: number;
       dropHeight?: number;
       descuelgue?: number;
+      hasLedCove?: boolean;
+      gargantaLed?: boolean;
     }
 
     const ceilings: CeilingMeasurement[] = rawCeilings.map((item, i) => {
@@ -322,6 +349,7 @@ Reglas:
         width: Number(c.width ?? c.ancho ?? 3.0),
         length: Number(c.length ?? c.largo ?? 3.0),
         dropHeight: Number(c.dropHeight ?? c.descuelgue ?? 0.1),
+        hasLedCove: Boolean(c.hasLedCove || c.gargantaLed),
       };
     });
 

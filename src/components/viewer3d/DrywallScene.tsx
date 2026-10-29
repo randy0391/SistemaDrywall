@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { useProjectStore } from '../../stores/useProjectStore';
+import { BOARD_TYPES } from '../../utils/constants';
 
 export type ViewMode = 'acabado' | 'estructura' | 'wireframe';
 export type CameraPreset = 'perspectiva' | 'planta' | 'frontal';
@@ -54,7 +55,7 @@ export default function DrywallScene() {
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
-    controls.maxPolarAngle = Math.PI / 2 + 0.05; // don't go below floor
+    controls.maxPolarAngle = Math.PI / 2 + 0.05;
     controls.minDistance = 1;
     controls.maxDistance = 25;
     controls.target.set(0, 1.2, 0);
@@ -133,14 +134,14 @@ export default function DrywallScene() {
   }, []);
 
   // Texture generator for Drywall boards
-  const drywallTexture = useCallback(() => {
+  const drywallTexture = useCallback((baseHex = '#f5f3ef') => {
     const canvas = document.createElement('canvas');
     canvas.width = 512;
     canvas.height = 512;
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
 
-    ctx.fillStyle = '#f5f3ef'; // Bone white / drywall paper color
+    ctx.fillStyle = baseHex;
     ctx.fillRect(0, 0, 512, 512);
 
     // Subtle paper grain
@@ -153,7 +154,7 @@ export default function DrywallScene() {
     }
 
     // Drywall sheet joint line
-    ctx.strokeStyle = '#e2dfd7';
+    ctx.strokeStyle = 'rgba(0,0,0,0.08)';
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.moveTo(256, 0);
@@ -167,32 +168,38 @@ export default function DrywallScene() {
   }, []);
 
   // Dimension billboard sprite
-  const createTextSprite = (text: string) => {
+  const createTextSprite = (text: string, subtitle?: string) => {
     const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 80;
+    canvas.width = 280;
+    canvas.height = subtitle ? 96 : 80;
     const ctx = canvas.getContext('2d');
     if (!ctx) return new THREE.Sprite();
 
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
-    ctx.roundRect(4, 4, 248, 72, 12);
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+    ctx.roundRect(4, 4, 272, subtitle ? 88 : 72, 12);
     ctx.fill();
 
     ctx.strokeStyle = '#3b82f6';
     ctx.lineWidth = 3;
-    ctx.roundRect(4, 4, 248, 72, 12);
+    ctx.roundRect(4, 4, 272, subtitle ? 88 : 72, 12);
     ctx.stroke();
 
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 26px system-ui, sans-serif';
+    ctx.font = 'bold 24px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(text, 128, 40);
+    ctx.fillText(text, 140, subtitle ? 34 : 40);
+
+    if (subtitle) {
+      ctx.font = 'bold 15px system-ui, sans-serif';
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillText(subtitle, 140, 66);
+    }
 
     const texture = new THREE.CanvasTexture(canvas);
     const spriteMaterial = new THREE.SpriteMaterial({ map: texture, transparent: true });
     const sprite = new THREE.Sprite(spriteMaterial);
-    sprite.scale.set(0.7, 0.22, 1);
+    sprite.scale.set(subtitle ? 0.78 : 0.72, subtitle ? 0.26 : 0.22, 1);
     return sprite;
   };
 
@@ -213,15 +220,6 @@ export default function DrywallScene() {
       return;
     }
 
-    const tex = drywallTexture();
-
-    const drywallMat = new THREE.MeshStandardMaterial({
-      color: 0xf3efe6,
-      roughness: 0.85,
-      metalness: 0.05,
-      map: tex,
-    });
-
     const studMat = new THREE.MeshStandardMaterial({
       color: 0x94a3b8,
       metalness: 0.8,
@@ -237,6 +235,23 @@ export default function DrywallScene() {
     const wireMat = new THREE.MeshBasicMaterial({
       color: 0x2563eb,
       wireframe: true,
+    });
+
+    // Insulation Materials
+    const fiberglassMat = new THREE.MeshStandardMaterial({
+      color: 0xfacc15, // yellow fiberglass wool
+      roughness: 0.95,
+      metalness: 0.0,
+      opacity: 0.85,
+      transparent: true,
+    });
+
+    const rockwoolMat = new THREE.MeshStandardMaterial({
+      color: 0x57534e, // dense grey/brown rockwool
+      roughness: 0.95,
+      metalness: 0.0,
+      opacity: 0.85,
+      transparent: true,
     });
 
     const wallThickness = 0.09;
@@ -257,6 +272,18 @@ export default function DrywallScene() {
 
       wallGroup.position.set(currentX, 0, currentZ);
       wallGroup.rotation.y = angle;
+
+      // Board Type Color & Texture
+      const bType = wall.boardType || 'ST';
+      const bConfig = BOARD_TYPES[bType] || BOARD_TYPES.ST;
+      const tex = drywallTexture(bConfig.color);
+
+      const drywallMat = new THREE.MeshStandardMaterial({
+        color: bConfig.hex3d,
+        roughness: 0.85,
+        metalness: 0.05,
+        map: tex,
+      });
 
       // 1. Structure: Tracks
       const trackThickness = 0.03;
@@ -292,9 +319,26 @@ export default function DrywallScene() {
         studMesh.position.set(xPos, wHeight / 2, 0);
         studMesh.castShadow = true;
         wallGroup.add(studMesh);
+
+        // 3. Insulation pads between studs (shown in estructura mode or wireframe)
+        if (
+          wall.insulation &&
+          wall.insulation !== 'ninguno' &&
+          i < studCount - 1 &&
+          viewMode !== 'acabado'
+        ) {
+          const padWidth = studSpacing - studWidth;
+          const padGeo = new THREE.BoxGeometry(padWidth, studHeight - 0.02, wallThickness * 0.7);
+          const padMesh = new THREE.Mesh(
+            padGeo,
+            wall.insulation === 'fibra_vidrio' ? fiberglassMat : rockwoolMat
+          );
+          padMesh.position.set(xPos + studSpacing / 2, wHeight / 2, 0);
+          wallGroup.add(padMesh);
+        }
       }
 
-      // 3. Openings
+      // 4. Openings
       if (wall.openings && wall.openings.length > 0) {
         wall.openings.forEach((op) => {
           const kingStud1 = new THREE.Mesh(studGeo, studMat);
@@ -312,7 +356,33 @@ export default function DrywallScene() {
         });
       }
 
-      // 4. Drywall Boards
+      // 5. Lighted Niche / TV Feature
+      if (wall.hasLightNiche || wall.type === 'nicho') {
+        const nicheW = Math.min(1.4, wWidth * 0.6);
+        const nicheH = Math.min(0.9, wHeight * 0.45);
+        const nicheBoxGeo = new THREE.BoxGeometry(nicheW, nicheH, wallThickness * 0.9);
+        const nicheBoxMat = new THREE.MeshStandardMaterial({
+          color: 0x1e293b,
+          roughness: 0.4,
+        });
+        const nicheMesh = new THREE.Mesh(nicheBoxGeo, nicheBoxMat);
+        nicheMesh.position.set(wWidth / 2, wHeight / 2, 0);
+        wallGroup.add(nicheMesh);
+
+        // LED Strip inside niche
+        const ledStripGeo = new THREE.BoxGeometry(nicheW - 0.06, 0.015, 0.015);
+        const ledStripMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+        const ledStrip = new THREE.Mesh(ledStripGeo, ledStripMat);
+        ledStrip.position.set(wWidth / 2, wHeight / 2 + nicheH / 2 - 0.02, wallThickness / 4);
+        wallGroup.add(ledStrip);
+
+        // Soft Accent Light
+        const nicheLight = new THREE.PointLight(0x67e8f9, 1.2, 2.5);
+        nicheLight.position.set(wWidth / 2, wHeight / 2, wallThickness);
+        wallGroup.add(nicheLight);
+      }
+
+      // 6. Drywall Boards
       if (viewMode === 'acabado') {
         const boardThickness = 0.0127;
         const zOffsetFront = wallThickness / 2 + boardThickness / 2;
@@ -335,10 +405,16 @@ export default function DrywallScene() {
         }
       }
 
-      // 5. Dimension Annotation
+      // 7. Dimension & Material Tag Annotation
       if (showDimensions) {
-        const dimSprite = createTextSprite(`${wWidth.toFixed(2)}m × ${wHeight.toFixed(2)}m`);
-        dimSprite.position.set(wWidth / 2, wHeight + 0.28, 0);
+        const tagText = `${wWidth.toFixed(2)}m × ${wHeight.toFixed(2)}m`;
+        let subText = bConfig.label;
+        if (wall.insulation === 'fibra_vidrio') subText += ' + Lana Vidrio';
+        if (wall.insulation === 'lana_roca') subText += ' + Lana Roca';
+        if (wall.hasLightNiche) subText += ' + Nicho LED';
+
+        const dimSprite = createTextSprite(tagText, subText);
+        dimSprite.position.set(wWidth / 2, wHeight + 0.35, 0);
         wallGroup.add(dimSprite);
 
         const lineGeo = new THREE.BufferGeometry().setFromPoints([
@@ -359,7 +435,7 @@ export default function DrywallScene() {
       }
     });
 
-    // 6. Ceilings
+    // 8. Ceilings
     if (currentProject.ceilings && currentProject.ceilings.length > 0) {
       currentProject.ceilings.forEach((ceiling) => {
         const cGroup = new THREE.Group();
@@ -369,12 +445,62 @@ export default function DrywallScene() {
 
         cGroup.position.set(cWidth / 2, cHeight, cLength / 2);
 
+        const bType = ceiling.boardType || 'ST';
+        const bConfig = BOARD_TYPES[bType] || BOARD_TYPES.ST;
+        const cMat = new THREE.MeshStandardMaterial({
+          color: bConfig.hex3d,
+          roughness: 0.85,
+        });
+
         if (viewMode === 'acabado') {
           const cGeo = new THREE.BoxGeometry(cWidth, 0.0127, cLength);
-          const cMesh = new THREE.Mesh(cGeo, drywallMat);
+          const cMesh = new THREE.Mesh(cGeo, cMat);
           cMesh.castShadow = true;
           cMesh.receiveShadow = true;
           cGroup.add(cMesh);
+
+          // Coved Ceiling (Garganta de Luz Indirecta LED)
+          if (ceiling.hasLedCove) {
+            const stepThickness = 0.08;
+            const stepDrop = 0.06;
+            const rimMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
+
+            // 4 rim pieces
+            const rimGeoX = new THREE.BoxGeometry(cWidth, stepDrop, stepThickness);
+            const rimGeoZ = new THREE.BoxGeometry(stepThickness, stepDrop, cLength);
+
+            const rim1 = new THREE.Mesh(rimGeoX, rimMat);
+            rim1.position.set(0, -stepDrop / 2, -cLength / 2 + stepThickness / 2);
+            cGroup.add(rim1);
+
+            const rim2 = new THREE.Mesh(rimGeoX, rimMat);
+            rim2.position.set(0, -stepDrop / 2, cLength / 2 - stepThickness / 2);
+            cGroup.add(rim2);
+
+            const rim3 = new THREE.Mesh(rimGeoZ, rimMat);
+            rim3.position.set(-cWidth / 2 + stepThickness / 2, -stepDrop / 2, 0);
+            cGroup.add(rim3);
+
+            const rim4 = new THREE.Mesh(rimGeoZ, rimMat);
+            rim4.position.set(cWidth / 2 - stepThickness / 2, -stepDrop / 2, 0);
+            cGroup.add(rim4);
+
+            // Glowing LED Emissive Strip
+            const ledMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+            const ledGeoX = new THREE.BoxGeometry(cWidth - 0.16, 0.015, 0.015);
+            const ledStrip1 = new THREE.Mesh(ledGeoX, ledMat);
+            ledStrip1.position.set(0, -stepDrop + 0.015, -cLength / 2 + stepThickness + 0.02);
+            cGroup.add(ledStrip1);
+
+            const ledStrip2 = new THREE.Mesh(ledGeoX, ledMat);
+            ledStrip2.position.set(0, -stepDrop + 0.015, cLength / 2 - stepThickness - 0.02);
+            cGroup.add(ledStrip2);
+
+            // Real Ambient Glow Light
+            const coveLight = new THREE.PointLight(0x38bdf8, 1.8, 6);
+            coveLight.position.set(0, -0.2, 0);
+            cGroup.add(coveLight);
+          }
         }
 
         if (viewMode !== 'acabado') {
@@ -398,8 +524,11 @@ export default function DrywallScene() {
         }
 
         if (showDimensions) {
-          const cLabel = createTextSprite(`Techo: ${cWidth.toFixed(2)}m × ${cLength.toFixed(2)}m`);
-          cLabel.position.set(0, 0.25, 0);
+          let label = `Techo: ${cWidth.toFixed(2)}m × ${cLength.toFixed(2)}m`;
+          let sub = bConfig.label;
+          if (ceiling.hasLedCove) sub += ' + Garganta LED 💡';
+          const cLabel = createTextSprite(label, sub);
+          cLabel.position.set(0, 0.35, 0);
           cGroup.add(cLabel);
         }
 
@@ -458,8 +587,8 @@ export default function DrywallScene() {
     }
 
     if (withDims) {
-      const sprite = createTextSprite(`Ejemplo: 3.60m × 2.40m`);
-      sprite.position.set(0, wHeight + 0.25, 0);
+      const sprite = createTextSprite(`Ejemplo: 3.60m × 2.40m`, 'ST Standard 1/2"');
+      sprite.position.set(0, wHeight + 0.3, 0);
       group.add(sprite);
     }
   };
@@ -538,7 +667,7 @@ export default function DrywallScene() {
         <div className="flex items-center gap-1.5 pointer-events-auto">
           <button
             onClick={() => setShowDimensions(!showDimensions)}
-            title="Mostrar/Ocultar Medidas"
+            title="Mostrar/Ocultar Medidas y Etiquetas"
             className={`p-2 rounded-xl text-xs font-medium backdrop-blur-md transition-all border ${
               showDimensions
                 ? 'bg-blue-600/90 text-white border-blue-500'
@@ -569,19 +698,19 @@ export default function DrywallScene() {
         <div className="flex gap-1.5 bg-slate-900/90 backdrop-blur-md p-1 rounded-xl border border-slate-700 pointer-events-auto shadow-lg">
           <button
             onClick={() => setCameraPreset('perspectiva')}
-            className="px-2.5 py-1 text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+            className="px-2.5 py-1 text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
           >
             3D
           </button>
           <button
             onClick={() => setCameraPreset('planta')}
-            className="px-2.5 py-1 text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+            className="px-2.5 py-1 text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
           >
-            Plano 2D
+            Planta 2D
           </button>
           <button
             onClick={() => setCameraPreset('frontal')}
-            className="px-2.5 py-1 text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+            className="px-2.5 py-1 text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
           >
             Frontal
           </button>
