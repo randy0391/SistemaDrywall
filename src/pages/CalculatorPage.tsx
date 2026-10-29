@@ -399,6 +399,19 @@ export default function CalculatorPage() {
 
   return (
     <div className="py-3 space-y-4">
+      {/* Switcher Drywall vs Eléctrico */}
+      <div className="flex bg-slate-200/80 p-1 rounded-xl">
+        <button className="flex-1 py-2 text-xs font-bold rounded-lg bg-white text-blue-700 shadow-sm flex items-center justify-center gap-1.5 cursor-pointer">
+          <span>🧱</span> Módulo Drywall
+        </button>
+        <button
+          onClick={() => navigate('/electrical')}
+          className="flex-1 py-2 text-xs font-bold rounded-lg text-slate-600 hover:text-amber-700 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+        >
+          <span>⚡</span> Ir a Eléctrica
+        </button>
+      </div>
+
       {/* AI Sketch Scanner Fast Action Banner */}
       <button
         onClick={() => setShowScanner(true)}
@@ -826,6 +839,26 @@ export default function CalculatorPage() {
             <CostChart />
             <MaterialBarChart />
           </div>
+
+          {/* Linked Electrical Budget Banner (Separado de Drywall) */}
+          {(currentProject.electricalTotalCost || 0) > 0 && (
+            <div className="p-3.5 bg-amber-50/90 rounded-2xl border border-amber-200 flex items-center justify-between text-xs shadow-xs">
+              <div>
+                <p className="font-bold text-amber-900 flex items-center gap-1.5">
+                  <span>⚡</span> Trabajos Eléctricos Vinculados:
+                </p>
+                <p className="text-[11px] text-amber-700 mt-0.5">
+                  {currentProject.electricalItems?.length || 0} punto(s) monofásicos · Subtotal: S/ {(currentProject.electricalTotalCost || 0).toFixed(2)}
+                </p>
+              </div>
+              <button
+                onClick={() => navigate('/electrical')}
+                className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer shadow-xs whitespace-nowrap"
+              >
+                Ver Eléctrica ⚡
+              </button>
+            </div>
+          )}
         </div>
       )}
 

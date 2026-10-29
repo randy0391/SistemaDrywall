@@ -160,6 +160,11 @@ export default function ProjectsPage() {
                     <span className="text-[11px] text-slate-400">
                       {project.walls.length} tabiques · {project.ceilings.length} techos
                     </span>
+                    {project.electricalItems && project.electricalItems.length > 0 && (
+                      <span className="text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded-full">
+                        ⚡ {project.electricalItems.length} pto(s) eléctrico(s)
+                      </span>
+                    )}
                   </div>
                 </div>
 

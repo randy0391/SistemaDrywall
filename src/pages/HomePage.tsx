@@ -10,9 +10,10 @@ export default function HomePage() {
   ).slice(0, 5);
 
   const quickActions = [
-    { title: 'Nueva Cotización', description: 'Crear un nuevo proyecto', icon: '📋', path: '/projects', action: 'new' },
-    { title: 'Calculadora Rápida', description: 'Calcular materiales al instante', icon: '🧮', path: '/calculator' },
-    { title: 'Diseño 3D', description: 'Visualizar tu proyecto en 3D', icon: '🎨', path: '/viewer3d' },
+    { title: 'Presupuesto Drywall', description: 'Tabiquería, placas especiales y cielos rasos', icon: '🧱', path: '/calculator' },
+    { title: 'Instalaciones Eléctricas', description: 'Tomacorrientes, conmutados y tableros monofásicos 220V', icon: '⚡', path: '/electrical' },
+    { title: 'Diseño y Visualizador 3D', description: 'Visualizar tu estructura en 3D interactivo', icon: '🎨', path: '/viewer3d' },
+    { title: 'Mis Proyectos y Cotizaciones', description: 'Ver historial de presupuestos guardados', icon: '📁', path: '/projects' },
   ];
 
   const statusColors: Record<string, string> = {

@@ -50,6 +50,24 @@ const paintPriceFields = [
   { key: 'lijaAguaPliego', label: 'Lija de Agua grano 120 / 180 (pliego)' },
 ] as const;
 
+const electricalPriceFields = [
+  { key: 'cable14AWGMetro', label: 'Cable #14 AWG (2.5mm²) por metro' },
+  { key: 'cable12AWGMetro', label: 'Cable #12 AWG (4.0mm²) por metro' },
+  { key: 'cable10AWGMetro', label: 'Cable #10 AWG (6.0mm²) por metro' },
+  { key: 'tuboCorrugado12Metro', label: 'Tubo Corrugado Naranja 1/2" por metro' },
+  { key: 'tuboCorrugado34Metro', label: 'Tubo Corrugado Naranja 3/4" por metro' },
+  { key: 'cajaRectangular4x2', label: 'Caja Rectangular 4"×2" (unidad)' },
+  { key: 'cajaOctogonal', label: 'Caja Octogonal para centro de luz (unidad)' },
+  { key: 'placaTomacorrienteDoble', label: 'Placa Tomacorriente Doble 2P+T con tierra (unidad)' },
+  { key: 'placaInterruptorSimple', label: 'Placa Interruptor Simple (unidad)' },
+  { key: 'placaInterruptorConmutado', label: 'Placa Interruptor Conmutado 3-Way Escalera (unidad)' },
+  { key: 'spotLedEmpotrable', label: 'Spot / Dicroico LED con Driver (unidad)' },
+  { key: 'llaveTermomagnetica2P', label: 'Termomagnética Monofásica 2P (unidad)' },
+  { key: 'llaveDiferencial2P', label: 'Interruptor Diferencial 2×25A 30mA (unidad)' },
+  { key: 'gabineteTableroMonofasico', label: 'Gabinete Tablero Monofásico 4-8 Polos (unidad)' },
+  { key: 'cintaAislante', label: 'Cinta Aislante Profesional 3M (rollo)' },
+] as const;
+
 export default function SettingsPage() {
   const {
     prices,
@@ -123,13 +141,13 @@ export default function SettingsPage() {
         </div>
       </Card>
 
-      {/* 👷 Mano de Obra */}
+      {/* 👷 Mano de Obra Drywall */}
       <Card>
         <h3 className="font-bold text-slate-800 mb-1 flex items-center gap-2">
-          <span>👷</span> Tarifas de Mano de Obra (S/.)
+          <span>🧱</span> Mano de Obra Drywall (S/. por m²)
         </h3>
         <p className="text-xs text-slate-500 mb-4">
-          Costos por metro cuadrado aplicados a los presupuestos.
+          Costos por metro cuadrado aplicados a tabiques y cielos rasos.
         </p>
 
         <div className="space-y-3">
@@ -182,6 +200,67 @@ export default function SettingsPage() {
             onChange={(e) => updateLaborCosts({ profitMarginPercent: parseFloat(e.target.value) || 0 })}
           />
         </div>
+      </Card>
+
+      {/* ⚡ Mano de Obra Eléctrica Monofásica (Separada) */}
+      <Card className="border-amber-200 bg-gradient-to-br from-white to-amber-50/20">
+        <h3 className="font-bold text-amber-950 mb-1 flex items-center gap-2">
+          <span>⚡</span> Mano de Obra Eléctrica Monofásica (S/. por Punto)
+        </h3>
+        <p className="text-xs text-slate-500 mb-4">
+          Tarifas por punto instalado (canalización, cableado y conexionado 220V).
+        </p>
+
+        <div className="space-y-3">
+          <Input
+            label="Punto de tomacorriente (simple o doble)"
+            type="number"
+            step="1.00"
+            suffix="S/"
+            value={laborCosts.costPerPointTomacorriente}
+            onChange={(e) => updateLaborCosts({ costPerPointTomacorriente: parseFloat(e.target.value) || 0 })}
+          />
+          <Input
+            label="Punto de luz simple (interruptor + centro)"
+            type="number"
+            step="1.00"
+            suffix="S/"
+            value={laborCosts.costPerPointLuzSimple}
+            onChange={(e) => updateLaborCosts({ costPerPointLuzSimple: parseFloat(e.target.value) || 0 })}
+          />
+          <Input
+            label="Punto conmutado completo (3-way escalera - 2 controles)"
+            type="number"
+            step="1.00"
+            suffix="S/"
+            value={laborCosts.costPerPointConmutado}
+            onChange={(e) => updateLaborCosts({ costPerPointConmutado: parseFloat(e.target.value) || 0 })}
+          />
+          <Input
+            label="Punto de spot / dicroico LED empotrable"
+            type="number"
+            step="1.00"
+            suffix="S/"
+            value={laborCosts.costPerPointDicroico}
+            onChange={(e) => updateLaborCosts({ costPerPointDicroico: parseFloat(e.target.value) || 0 })}
+          />
+          <Input
+            label="Instalación y peinado de tablero monofásico"
+            type="number"
+            step="5.00"
+            suffix="S/"
+            value={laborCosts.costPerTableroMonofasico}
+            onChange={(e) => updateLaborCosts({ costPerTableroMonofasico: parseFloat(e.target.value) || 0 })}
+          />
+          <Input
+            label="Punto de fuerza monofásico (terma / cocina 220V)"
+            type="number"
+            step="1.00"
+            suffix="S/"
+            value={laborCosts.costPerPointFuerza}
+            onChange={(e) => updateLaborCosts({ costPerPointFuerza: parseFloat(e.target.value) || 0 })}
+          />
+        </div>
 
         <div className="mt-4">
           <Button variant="secondary" fullWidth onClick={handleResetLabor}>
@@ -199,6 +278,27 @@ export default function SettingsPage() {
           <p className="text-xs text-slate-500">
             Ajusta los precios de lista según tu ferretería local o distribuidor.
           </p>
+        </div>
+
+        {/* Materiales Eléctricos Monofásicos */}
+        <div className="space-y-2 pt-2 border-t border-slate-100">
+          <h4 className="text-xs font-black text-amber-900 uppercase tracking-wider flex items-center gap-1.5">
+            <span>⚡</span> Materiales Eléctricos Monofásicos (220V)
+          </h4>
+          <div className="space-y-2.5">
+            {electricalPriceFields.map((field) => (
+              <Input
+                key={field.key}
+                label={field.label}
+                type="number"
+                step="0.10"
+                min="0"
+                suffix="S/"
+                value={prices[field.key as keyof typeof prices]}
+                onChange={(e) => updatePrices({ [field.key]: parseFloat(e.target.value) || 0 })}
+              />
+            ))}
+          </div>
         </div>
 
         {/* Planchas */}
@@ -357,9 +457,9 @@ export default function SettingsPage() {
 
       <Card>
         <h3 className="font-semibold text-slate-800 mb-1">ℹ️ Acerca de</h3>
-        <p className="text-xs text-slate-600 font-semibold">DrywallCalc Pro 3D v2.2</p>
+        <p className="text-xs text-slate-600 font-semibold">Drywall & Electricidad Pro 220V</p>
         <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-          Suite completa para contratistas e instaladores de drywall: cálculo automatizado de materiales, placas especiales (RH, RF, Superboard), aislamiento acústico, iluminación LED arquitectónica, pedidos instantáneos por WhatsApp, estimación de cronogramas y visualización 3D interactiva.
+          Aplicación integral para contratistas de drywall e instalaciones eléctricas residenciales y comerciales monofásicas (220V). Módulos completamente independientes para presupuestos y pedidos sin mezclar partidas.
         </p>
       </Card>
     </div>

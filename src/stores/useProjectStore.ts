@@ -4,6 +4,7 @@ import type {
   Project,
   WallMeasurement,
   CeilingMeasurement,
+  ElectricalItem,
   MaterialPrices,
   LaborCosts,
   CrewSize,
@@ -17,6 +18,10 @@ import {
   calculateTotalCost,
   calculateLaborCost,
 } from '../utils/calculations';
+import {
+  calculateElectricalMaterials,
+  calculateElectricalLabor,
+} from '../utils/electricalCalculations';
 
 interface ProjectState {
   projects: Project[];
@@ -44,6 +49,11 @@ interface ProjectState {
   addCeiling: (ceiling: CeilingMeasurement) => void;
   updateCeiling: (ceilingId: string, updates: Partial<CeilingMeasurement>) => void;
   removeCeiling: (ceilingId: string) => void;
+
+  // Electrical Items (Separado de Drywall)
+  addElectricalItem: (item: ElectricalItem) => void;
+  updateElectricalItem: (id: string, updates: Partial<ElectricalItem>) => void;
+  removeElectricalItem: (id: string) => void;
 
   // Sketch import
   importFromSketch: (
@@ -91,6 +101,12 @@ export const useProjectStore = create<ProjectState>()(
           totalCost: 0,
           includePaintFinishing: false,
           crewSize: '1_maestro_1_ayudante',
+          // Electrical
+          electricalItems: [],
+          electricalMaterials: [],
+          electricalMaterialsCost: 0,
+          electricalLaborCost: 0,
+          electricalTotalCost: 0,
           laborSettings: get().laborCosts,
           status: 'borrador',
           createdAt: new Date().toISOString(),
@@ -260,6 +276,58 @@ export const useProjectStore = create<ProjectState>()(
         get().recalculate();
       },
 
+      // Electrical actions
+      addElectricalItem: (item) => {
+        set((state) => {
+          if (!state.currentProject) return state;
+          const prevItems = state.currentProject.electricalItems || [];
+          const updated: Project = {
+            ...state.currentProject,
+            electricalItems: [...prevItems, item],
+            updatedAt: new Date().toISOString(),
+          };
+          return {
+            currentProject: updated,
+            projects: state.projects.map((p) => (p.id === updated.id ? updated : p)),
+          };
+        });
+        get().recalculate();
+      },
+
+      updateElectricalItem: (id, updates) => {
+        set((state) => {
+          if (!state.currentProject) return state;
+          const prevItems = state.currentProject.electricalItems || [];
+          const updated: Project = {
+            ...state.currentProject,
+            electricalItems: prevItems.map((it) => (it.id === id ? { ...it, ...updates } : it)),
+            updatedAt: new Date().toISOString(),
+          };
+          return {
+            currentProject: updated,
+            projects: state.projects.map((p) => (p.id === updated.id ? updated : p)),
+          };
+        });
+        get().recalculate();
+      },
+
+      removeElectricalItem: (id) => {
+        set((state) => {
+          if (!state.currentProject) return state;
+          const prevItems = state.currentProject.electricalItems || [];
+          const updated: Project = {
+            ...state.currentProject,
+            electricalItems: prevItems.filter((it) => it.id !== id),
+            updatedAt: new Date().toISOString(),
+          };
+          return {
+            currentProject: updated,
+            projects: state.projects.map((p) => (p.id === updated.id ? updated : p)),
+          };
+        });
+        get().recalculate();
+      },
+
       importFromSketch: (walls, ceilings, sketchImage, projectName) => {
         const state = get();
         if (state.currentProject) {
@@ -321,6 +389,7 @@ export const useProjectStore = create<ProjectState>()(
         const labor = state.laborCosts;
         const proj = state.currentProject;
 
+        // 1. Drywall Calculations
         const wallMaterials = proj.walls.map((w) => calculateWallMaterials(w, prices));
         const ceilingMaterials = proj.ceilings.map((c) => calculateCeilingMaterials(c, prices));
         const paintMaterials = proj.includePaintFinishing
@@ -334,7 +403,7 @@ export const useProjectStore = create<ProjectState>()(
         ]);
         const materialsCost = calculateTotalCost(allMaterials);
 
-        // Labor calculation
+        // Drywall Labor
         const laborResult = calculateLaborCost(
           proj.walls,
           proj.ceilings,
@@ -343,21 +412,35 @@ export const useProjectStore = create<ProjectState>()(
         );
         const laborCost = laborResult.totalLabor;
 
-        // Subtotal & Profit/Contingency margin
+        // Subtotal & Profit/Contingency margin for Drywall
         const subtotal = materialsCost + laborCost;
         const profitAmount = labor.includeLabor
           ? (subtotal * (labor.profitMarginPercent || 0)) / 100
           : 0;
         const totalCost = Math.round((subtotal + profitAmount) * 100) / 100;
 
+        // 2. Electrical Calculations (100% Separado de Drywall)
+        const electricalItems = proj.electricalItems || [];
+        const electricalMaterials = calculateElectricalMaterials(electricalItems, prices);
+        const electricalMaterialsCost = calculateTotalCost(electricalMaterials);
+        const electricalLaborResult = calculateElectricalLabor(electricalItems, labor);
+        const electricalLaborCost = electricalLaborResult.totalLabor;
+        const electricalTotalCost = Math.round((electricalMaterialsCost + electricalLaborCost) * 100) / 100;
+
         set((s) => {
           const updated: Project = {
             ...s.currentProject!,
+            // Drywall
             materials: allMaterials,
             materialsCost: Math.round(materialsCost * 100) / 100,
             laborCost,
             profitAmount: Math.round(profitAmount * 100) / 100,
             totalCost,
+            // Electrical
+            electricalMaterials,
+            electricalMaterialsCost: Math.round(electricalMaterialsCost * 100) / 100,
+            electricalLaborCost,
+            electricalTotalCost,
             laborSettings: labor,
             updatedAt: new Date().toISOString(),
           };
