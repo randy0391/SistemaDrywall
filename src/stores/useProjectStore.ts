@@ -95,7 +95,7 @@ export const useProjectStore = create<ProjectState>()(
       currentElectricalProjectId: null,
       prices: DEFAULT_PRICES,
       laborCosts: DEFAULT_LABOR_COSTS,
-      geminiApiKey: 'AIzaSyDAR9JEpDaeu2RlYun_u7HWDKawPaD0w2w',
+      geminiApiKey: import.meta.env.VITE_GEMINI_API_KEY || '',
 
       createProject: (name, client, description, projectType = 'drywall', linkedProjectId) => {
         const project: Project = {

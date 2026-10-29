@@ -108,7 +108,11 @@ export default function SketchScannerModal({ isOpen, onClose, onSuccess }: Sketc
     try {
       const activeApiKey = (geminiApiKey && geminiApiKey.trim().length > 10)
         ? geminiApiKey.trim()
-        : 'AIzaSyDAR9JEpDaeu2RlYun_u7HWDKawPaD0w2w';
+        : (import.meta.env.VITE_GEMINI_API_KEY || '').trim();
+
+      if (!activeApiKey) {
+        throw new Error('No se ha configurado la API Key de Gemini. Ingrésala abajo o en la sección Configuración.');
+      }
 
       const base64Data = imagePreview.split(',')[1];
 
@@ -173,30 +177,43 @@ Reglas:
 
       setStatusMessage('Gemini Vision interpretando medidas y trazos...');
 
-      // Try gemini-3.5-flash-lite, fallback to gemini-3.8-flash
-      let response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${activeApiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: requestBody,
-        }
-      );
+      // Intentar modelos oficiales de Google Gemini
+      const candidateModels = [
+        'gemini-1.5-flash',
+        'gemini-2.0-flash',
+        'gemini-1.5-pro',
+      ];
 
-      if (!response.ok) {
-        response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${activeApiKey}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: requestBody,
+      let response: Response | null = null;
+      let lastErrMsg = '';
+
+      for (const model of candidateModels) {
+        try {
+          const res = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${activeApiKey}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: requestBody,
+            }
+          );
+          if (res.ok) {
+            response = res;
+            break;
+          } else {
+            const errJson = await res.json().catch(() => null);
+            lastErrMsg = errJson?.error?.message || `Error del servidor de IA (${res.status})`;
+            if (res.status === 400 && lastErrMsg.toLowerCase().includes('api key not valid')) {
+              break;
+            }
           }
-        );
+        } catch (fetchErr: unknown) {
+          lastErrMsg = fetchErr instanceof Error ? fetchErr.message : 'Error de conexión';
+        }
       }
 
-      if (!response.ok) {
-        const errJson = await response.json().catch(() => null);
-        throw new Error(errJson?.error?.message || `Error del servidor de IA (${response.status})`);
+      if (!response || !response.ok) {
+        throw new Error(lastErrMsg || 'No se pudo conectar con el servicio de IA de Google Gemini.');
       }
 
       const data = await response.json();
@@ -455,16 +472,22 @@ Reglas:
           )}
 
           {/* API Key info */}
-          <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs flex items-center justify-between">
-            <span className="text-slate-600 text-[11px] font-medium flex items-center gap-1.5">
-              <span>🤖</span> Gemini Vision conectado: <strong className="text-emerald-600">Activo ✓</strong>
+          <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs flex items-center justify-between gap-2">
+            <span className="text-slate-600 text-[11px] font-medium flex items-center gap-1.5 truncate">
+              <span>🤖</span> Gemini IA:
+              {geminiApiKey ? (
+                <strong className="text-emerald-600 font-semibold">Configurada ✓</strong>
+              ) : (
+                <strong className="text-amber-600 font-semibold">Sin clave</strong>
+              )}
             </span>
             <input
               type="password"
-              title="Tu clave de Gemini"
-              value={geminiApiKey || 'AIzaSyDAR9JEpDaeu2RlYun_u7HWDKawPaD0w2w'}
+              placeholder="Pegar API Key..."
+              title="Tu clave de Gemini (se guarda localmente en tu navegador)"
+              value={geminiApiKey}
               onChange={(e) => setGeminiApiKey(e.target.value)}
-              className="w-24 text-[10px] px-1.5 py-0.5 bg-white border border-slate-300 rounded text-slate-400 text-right"
+              className="w-32 text-[10px] px-2 py-1 bg-white border border-slate-300 rounded text-slate-700 font-mono"
             />
           </div>
 

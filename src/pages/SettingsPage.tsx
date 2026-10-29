@@ -123,7 +123,7 @@ export default function SettingsPage() {
           <Input
             label="Google Gemini API Key"
             type="password"
-            placeholder="AIzaSy..."
+            placeholder="Ej: AIzaSy..."
             value={geminiApiKey}
             onChange={(e) => setGeminiApiKey(e.target.value)}
           />
