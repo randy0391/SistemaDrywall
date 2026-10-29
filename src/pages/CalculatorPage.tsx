@@ -352,48 +352,58 @@ export default function CalculatorPage() {
       {/* AI Sketch Scanner Fast Action Banner */}
       <button
         onClick={() => setShowScanner(true)}
-        className="w-full py-2.5 px-3.5 bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600 text-white rounded-2xl shadow-md font-bold text-xs sm:text-sm flex items-center justify-between hover:opacity-95 active:scale-[0.99] transition-all cursor-pointer border border-purple-400"
+        className="w-full py-2.5 px-3 bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600 text-white rounded-2xl shadow-md font-bold text-xs flex items-center justify-between gap-2 hover:opacity-95 active:scale-[0.99] transition-all cursor-pointer border border-purple-400"
       >
-        <div className="flex items-center gap-2">
-          <span className="text-xl">📸</span>
-          <span className="text-left font-black">Escanear Dibujo a Mano con IA</span>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-lg shrink-0">📸</span>
+          <span className="font-black truncate">Escanear Dibujo con IA</span>
         </div>
-        <span className="bg-white/20 text-white text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-full">
+        <span className="bg-white/20 text-white text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full shrink-0 whitespace-nowrap">
           Foto / Croquis
         </span>
       </button>
 
-      {/* Project Header Bar */}
-      <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">
-              Proyecto
-            </span>
-            <h2 className="text-base font-bold text-slate-900 truncate max-w-[180px]">
-              {currentProject.name}
-            </h2>
+      {/* Project Header Bar - Mobile Optimized */}
+      <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+        {/* Top: Project Info & "+ Nuevo" */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[10px] font-black uppercase tracking-wider text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md shrink-0">
+                Proyecto
+              </span>
+              <h2 className="text-sm sm:text-base font-bold text-slate-900 truncate max-w-[200px]">
+                {currentProject.name}
+              </h2>
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5 truncate">
+              {currentProject.client || 'Sin cliente especificado'}
+            </p>
           </div>
-          <p className="text-xs text-slate-500 mt-0.5">{currentProject.client || 'Sin cliente especificado'}</p>
+
+          <button
+            onClick={() => setShowNewProject(true)}
+            className="shrink-0 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+          >
+            + Nuevo
+          </button>
         </div>
 
-        <div className="flex gap-1.5">
+        {/* Action Buttons: 2 Equal Columns for Mobile Screens */}
+        <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
           <button
             onClick={() => setShowShareModal(true)}
             title="Pasar este proyecto al celular"
-            className="p-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl border border-blue-200 text-xs font-bold flex items-center gap-1 active:scale-95 transition-transform cursor-pointer"
+            className="py-2 px-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl border border-blue-200 text-xs font-bold flex items-center justify-center gap-1.5 active:scale-95 transition-transform cursor-pointer whitespace-nowrap"
           >
-            <span>📲</span> Pasar a Celular
+            <span className="text-sm">📲</span> Pasar a Celular
           </button>
           <button
             onClick={() => navigate('/viewer3d')}
-            className="p-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl shadow-sm text-xs font-bold flex items-center gap-1 active:scale-95 transition-transform cursor-pointer"
+            className="py-2 px-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl shadow-xs text-xs font-bold flex items-center justify-center gap-1.5 active:scale-95 transition-transform cursor-pointer whitespace-nowrap"
           >
-            <span>🎨</span> 3D
+            <span className="text-sm">🎨</span> Ver en 3D
           </button>
-          <Button variant="secondary" size="sm" onClick={() => setShowNewProject(true)}>
-            + Nuevo
-          </Button>
         </div>
       </div>
 
@@ -668,7 +678,7 @@ export default function CalculatorPage() {
               </div>
               <button
                 onClick={() => navigate('/viewer3d')}
-                className="px-4 py-2 bg-white text-blue-800 text-xs font-bold rounded-xl shadow-md hover:bg-blue-50 transition-all active:scale-95 cursor-pointer"
+                className="px-4 py-2 bg-white text-blue-800 text-xs font-bold rounded-xl shadow-md hover:bg-blue-50 transition-all active:scale-95 cursor-pointer shrink-0 whitespace-nowrap ml-2"
               >
                 Ver Diseño 3D 🎨
               </button>
